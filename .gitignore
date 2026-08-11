@@ -1,0 +1,31 @@
+# Source-only repository: ignore every path unless explicitly allowed below.
+*
+
+# Keep the repository policy itself.
+!.gitignore
+
+# Public source and documentation selected for this repository.
+!main.py
+!notes/
+!notes/**
+!scripts/
+!scripts/**
+!src/
+!src/**
+!test/
+!test/**
+
+# Generated/cache content inside the allowed trees must remain local.
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.orig
+**/*:Zone.Identifier
+
+# Large generated test products, not test source code.
+test/disk_transfer/test_outputs/
+test/disk_transfer/gamma_fit_output/
+test/disk_transfer/gamma_test_disk_outputs/
+test/disk_transfer/disk_transfer_functions_linear.png
