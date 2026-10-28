@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,14 @@ import pandas as pd
 import yaml
 from mpi4py import MPI
 
+from collect_mica_results import (
+    configured_run_name,
+    mica_analysis_dir,
+    mica_run_root,
+    model_label,
+    ncomp_from_config,
+    stage_config,
+)
 from posterior_branches import branch_result_relative_dir
 
 
@@ -142,6 +151,82 @@ def posterior_branch_fflux_config(
     return ff
 
 
+def mica_component_fflux_config(
+    src: Path,
+    config: dict[str, Any],
+    section: str,
+    stage: str,
+    component: str = "comp0",
+) -> dict[str, Any]:
+    """Build FFA config for a native component of one full MICA posterior."""
+    ff = fflux_config(config, section)
+    fit = stage_config(config, stage)
+    ncomp = ncomp_from_config(fit)
+    component_order = str(fit.get("component_order", "native")).strip().lower()
+    if component_order not in {"", "native", "none"}:
+        raise ValueError(
+            f"{stage} uses component_order={component_order!r}; native MICA pline "
+            "curves cannot be relabelled draw by draw. Direct component FFA is "
+            "only valid for stages whose non-overlapping priors fix native identity."
+        )
+    match = re.fullmatch(r"comp(\d+)", str(component).strip().lower())
+    if match is None or int(match.group(1)) >= ncomp:
+        raise ValueError(
+            f"{stage} component must be comp0..comp{ncomp - 1}, got {component!r}"
+        )
+    component = f"comp{int(match.group(1))}"
+    model = model_label(fit.get("type_tf", "gaussian"))
+    run_root = mica_run_root(src, fit)
+    analysis_root = mica_analysis_dir(src, fit, component)
+    source = str(config.get("source") or src.name)
+    driver = str(fit.get("driver") or config.get("reference_band"))
+    responses = list(dict.fromkeys(str(value) for value in (fit.get("responses") or [])))
+    if not driver or not responses:
+        raise ValueError(f"{stage} must define a driver and response bands")
+
+    ff["out"] = str(analysis_root / "fflux")
+    ff["bands"] = list(dict.fromkeys([driver, *responses]))
+    ff["component"] = {"name": component}
+    ff["mica"] = {
+        "stage": stage,
+        "driver": driver,
+        "driver_file": str(
+            rel(src, fit.get("prepared_dir", "fflux/host_sub"))
+            / f"{source}_{driver}.txt"
+        ),
+        "ncomp": ncomp,
+        "component_index": int(match.group(1)),
+        "root": str(run_root),
+        "run_template": str(
+            fit.get(
+                "run_template",
+                "run_{driver}_to_{band}_{ncomp}comp_{type_tf}",
+            )
+        ),
+        "type_tf": model,
+        "response_time_support": str(
+            (ff.get("mica", {}) or {}).get("response_time_support", "driver")
+        ),
+    }
+    ff["mica_component"] = {
+        "stage": stage,
+        "component": component,
+        "model": model,
+        "ncomp": ncomp,
+        "run_root": str(run_root),
+        "collection_root": str(run_root / "result"),
+        "analysis_root": str(analysis_root),
+        "selection": "full_native_posterior",
+    }
+
+    # Validate every expected run name before FFA creates output directories.
+    for response in responses:
+        expected = run_root / configured_run_name(fit, response)
+        if not expected.is_dir():
+            raise FileNotFoundError(f"missing MICA run for {stage}/{response}: {expected}")
+    return ff
+
+
 def parse_steps(value: str | None, ff: dict[str, Any]) -> list[str]:
     value = value or ff.get("steps", STEPS)
     if isinstance(value, str):
@@ -162,10 +247,19 @@ def root_dir(src: Path, ff: dict[str, Any]) -> Path:
     return rel(src, ff["out"])
 
 
-def run_config(src: Path, original: dict[str, Any], ff: dict[str, Any], steps: list[str]) -> Path:
+def run_config(
+    src: Path,
+    original: dict[str, Any],
+    ff: dict[str, Any],
+    steps: list[str],
+    *,
+    fit_restart: Path | None = None,
+) -> Path:
     payload = dict(original)
     payload["fflux"] = ff
     payload["_run_ffa"] = {"source_dir": str(src), "steps": steps}
+    if fit_restart is not None:
+        payload["_run_ffa"]["fit_restart"] = str(fit_restart)
 
     path = root_dir(src, ff) / "run.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -331,6 +425,55 @@ def load_mica_decomposition(
     return driver, response
 
 
+def clip_light_curve_to_support(
+    data: np.ndarray,
+    support_min: float,
+    support_max: float,
+    path: Path,
+) -> np.ndarray:
+    """Clip a reconstructed light curve to an observed time support.
+
+    MICA ``pline`` products are evaluated on a padded reconstruction grid.
+    Those padding intervals are useful for displaying the reconstruction but
+    must not define the bright/faint states used by the downstream FFA.  Keep
+    only the configured driver support and interpolate the smooth MICA
+    reconstruction to the exact support boundaries.
+    """
+    support_min = float(support_min)
+    support_max = float(support_max)
+    if (
+        not np.isfinite(support_min)
+        or not np.isfinite(support_max)
+        or support_max <= support_min
+    ):
+        raise ValueError("light-curve support must be finite and increasing")
+    if data[0, 0] > support_min or data[-1, 0] < support_max:
+        raise ValueError(
+            f"MICA reconstruction in {path} does not span the driver support "
+            f"[{support_min:.10g}, {support_max:.10g}]"
+        )
+
+    time = data[:, 0]
+    interior = data[(time > support_min) & (time < support_max)]
+    boundaries = []
+    for boundary in (support_min, support_max):
+        exact = np.flatnonzero(np.isclose(time, boundary, rtol=0.0, atol=1.0e-10))
+        if len(exact):
+            boundaries.append(data[int(exact[0])].copy())
+        else:
+            boundaries.append(np.array([
+                boundary,
+                np.interp(boundary, time, data[:, 1]),
+                np.interp(boundary, time, data[:, 2]),
+            ]))
+    clipped = np.vstack((boundaries[0], interior, boundaries[1]))
+    return validate_light_curve(
+        clipped,
+        path,
+        label="MICA response clipped to driver support",
+    )
+
+
 def prepare_mica_component(
     src: Path,
     ff: dict[str, Any],
@@ -377,12 +520,27 @@ def prepare_mica_component(
 
     target_path = output_dir / f"{source}_{driver_band}_{component}.txt"
     save_light_curve(target_path, driver_data)
+    support_mode = str(mica.get("response_time_support", "driver")).lower()
+    if support_mode not in {"driver", "mica_grid"}:
+        raise ValueError(
+            "fflux_comp0.mica.response_time_support must be 'driver' or "
+            f"'mica_grid', got {support_mode!r}"
+        )
+    support_min = float(driver_data[0, 0])
+    support_max = float(driver_data[-1, 0])
     manifest.append({
         "band": driver_band,
         "role": "driver",
         "n": len(driver_data),
+        "n_input": len(driver_data),
+        "n_trimmed": 0,
         "time_min": float(driver_data[0, 0]),
         "time_max": float(driver_data[-1, 0]),
+        "input_time_min": float(driver_data[0, 0]),
+        "input_time_max": float(driver_data[-1, 0]),
+        "support_mode": "observed_driver",
+        "support_min": support_min,
+        "support_max": support_max,
         "flux_ptp": float(np.ptp(driver_data[:, 1])),
         "input": str(driver_path),
         "output": str(target_path),
@@ -398,15 +556,31 @@ def prepare_mica_component(
 
         run_dir = mica_run_dir(src, mica, band, component_index)
         source_path = run_dir / "data" / decomp_name
-        _, response_data = load_mica_decomposition(source_path)
+        _, response_input = load_mica_decomposition(source_path)
+        if support_mode == "driver":
+            response_data = clip_light_curve_to_support(
+                response_input,
+                support_min,
+                support_max,
+                source_path,
+            )
+        else:
+            response_data = response_input
         target_path = output_dir / f"{source}_{band}_{component}.txt"
         save_light_curve(target_path, response_data)
         manifest.append({
             "band": band,
             "role": "response_comp0" if component_index == 0 else f"response_comp{component_index}",
             "n": len(response_data),
+            "n_input": len(response_input),
+            "n_trimmed": len(response_input) - len(response_data),
             "time_min": float(response_data[0, 0]),
             "time_max": float(response_data[-1, 0]),
+            "input_time_min": float(response_input[0, 0]),
+            "input_time_max": float(response_input[-1, 0]),
+            "support_mode": support_mode,
+            "support_min": support_min,
+            "support_max": support_max,
             "flux_ptp": float(np.ptp(response_data[:, 1])),
             "input": str(source_path),
             "output": str(target_path),
@@ -448,6 +622,123 @@ def run_fit(src: Path, ff: dict[str, Any]) -> Path:
 
     result = fit(src, ff)
     return Path(result["sample_dir"])
+
+
+def _data_row_count(path: Path) -> int:
+    if not path.is_file():
+        raise FileNotFoundError(f"CDNest continuation file not found: {path}")
+    with path.open("rb") as handle:
+        return sum(
+            1
+            for line in handle
+            if line.strip() and not line.lstrip().startswith(b"#")
+        )
+
+
+def validate_fit_restart(
+    sample_dir: Path,
+    restart_file: str | Path,
+    max_num_saves: int,
+) -> tuple[Path, int]:
+    """Validate a CDNest checkpoint and its append-only sample files."""
+    sample_dir = sample_dir.expanduser().resolve()
+    path = Path(restart_file).expanduser()
+    path = path.resolve() if path.is_absolute() else (sample_dir / path).resolve()
+    if path.parent != sample_dir:
+        raise ValueError(
+            f"FFA restart file must be directly under {sample_dir}, got {path}"
+        )
+    if not path.is_file():
+        raise FileNotFoundError(f"FFA restart file not found: {path}")
+    if int(max_num_saves) <= 0:
+        raise ValueError("fflux.fit.max_saves must be positive for restart")
+
+    int_size = struct.calcsize("@i")
+    with path.open("rb") as handle:
+        raw_count = handle.read(int_size)
+    if len(raw_count) != int_size:
+        raise ValueError(f"truncated CDNest restart file: {path}")
+    count_saves = int(struct.unpack("@i", raw_count)[0])
+    if count_saves <= 0:
+        raise ValueError(
+            f"invalid saved-sample count {count_saves} in CDNest restart file: {path}"
+        )
+    if count_saves >= int(max_num_saves):
+        raise ValueError(
+            f"restart already contains {count_saves} saves, which is not below "
+            f"configured max_saves={int(max_num_saves)}"
+        )
+
+    for name in ("sample.txt", "sample_info.txt"):
+        continuation = sample_dir / name
+        rows = _data_row_count(continuation)
+        if rows != count_saves:
+            raise ValueError(
+                f"unsafe CDNest restart: {continuation} has {rows} data rows, "
+                f"but {path.name} records {count_saves}; restore both files to "
+                "the same checkpoint before restarting"
+            )
+    return path, count_saves
+
+
+def run_fit_restart(src: Path, ff: dict[str, Any], restart_file: Path) -> Path:
+    """Resume the configured FFA model from an in-place CDNest checkpoint."""
+    import cydnest
+    from ffa.ffa import build_model
+
+    source = str(ff.get("source") or src.name)
+    component = str(ff["component"]["name"])
+    bands = [str(band) for band in ff["bands"]]
+    root = root_dir(src, ff)
+    input_dir = root / "dered" if (root / "dered").exists() else root / "input"
+    sample_dir = root / "fit"
+    filenames = [f"{source}_{band}_{component}.txt" for band in bands]
+    missing = [name for name in filenames if not (input_dir / name).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"missing FFA restart input(s) under {input_dir}: {', '.join(missing)}"
+        )
+
+    fit_cfg = dict(ff.get("fit", {}) or {})
+    shifts = fit_cfg.get("time_shifts")
+    if shifts:
+        shifts = {int(key): float(value) for key, value in shifts.items()}
+    max_num_saves = int(fit_cfg.get("max_saves", 1000))
+    restart_path, count_saves = validate_fit_restart(
+        sample_dir, restart_file, max_num_saves
+    )
+    log(
+        f"        restart: {restart_path} "
+        f"({count_saves}/{max_num_saves} saves)"
+    )
+
+    model = build_model(
+        filenames=filenames,
+        data_dir=input_dir,
+        time_shifts=shifts,
+        tau_min=float(fit_cfg.get("tau_min", 100.0)),
+        R_min=float(fit_cfg.get("r_min", 0.01)),
+        R_max=float(fit_cfg.get("r_max", 10.0)),
+    )
+    sampler = cydnest.sampler(
+        model,
+        sample_dir=str(sample_dir),
+        thread_steps_factor=int(fit_cfg.get("thread_steps_factor", 2)),
+        max_num_saves=max_num_saves,
+    )
+    sampler.restart(
+        restart_file=str(restart_path),
+        max_num_saves=max_num_saves,
+    )
+    if RANK == 0:
+        model.postprocess(
+            sample_path=sample_dir / "posterior_sample.txt",
+            output_dir=sample_dir,
+            make_plots=True,
+            save_plots=True,
+            show_plots=False,
+        )
+    return sample_dir
 
 
 def run_summ(src: Path, ff: dict[str, Any]) -> Path:
@@ -704,6 +995,67 @@ def _percentiles(values: np.ndarray) -> tuple[float, float, float]:
     return tuple(float(value) for value in np.percentile(values, [16.0, 50.0, 84.0]))
 
 
+def _joint_rms_sed_samples(
+    posterior: pd.DataFrame,
+    bands: list[str],
+    wavelengths: np.ndarray,
+) -> np.ndarray:
+    """Return all-positive joint samples of ``lambda * R_lambda``."""
+    wavelengths = np.asarray(wavelengths, dtype=float)
+    if wavelengths.ndim != 1 or len(wavelengths) != len(bands):
+        raise ValueError("wavelengths must be one-dimensional and match bands")
+    if not np.isfinite(wavelengths).all() or np.any(wavelengths <= 0.0):
+        raise ValueError("wavelengths must be finite and positive")
+
+    columns = [f"R_{band_key(band)}" for band in bands]
+    missing = [column for column in columns if column not in posterior]
+    if missing:
+        raise KeyError(f"missing FFA RMS posterior columns: {missing}")
+    rms_amplitude = posterior[columns].apply(
+        pd.to_numeric, errors="coerce"
+    ).to_numpy(float)
+    samples = rms_amplitude * wavelengths[None, :]
+    good = np.all(np.isfinite(samples) & (samples > 0.0), axis=1)
+    return samples[good]
+
+
+def _powerlaw_posterior_envelope(
+    normalizations: np.ndarray,
+    slopes: np.ndarray,
+    wavelengths: np.ndarray,
+    pivot: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the full fitted power-law posterior envelope.
+
+    The normalization is a nuisance parameter, but its posterior uncertainty
+    remains part of the physical model prediction.  It is therefore retained
+    here instead of being projected out draw by draw for visualization.
+    """
+    normalizations = np.asarray(normalizations, dtype=float)
+    slopes = np.asarray(slopes, dtype=float)
+    wavelengths = np.asarray(wavelengths, dtype=float)
+    if normalizations.ndim != 1 or slopes.shape != normalizations.shape:
+        raise ValueError("normalizations and slopes must be matching 1D arrays")
+    if wavelengths.ndim != 1:
+        raise ValueError("wavelengths must be one-dimensional")
+    if (
+        not np.isfinite(normalizations).all()
+        or not np.isfinite(slopes).all()
+        or not np.isfinite(wavelengths).all()
+        or not np.isfinite(pivot)
+    ):
+        raise ValueError("power-law envelope inputs must be finite")
+    if np.any(normalizations <= 0.0) or np.any(wavelengths <= 0.0) or pivot <= 0.0:
+        raise ValueError("normalizations, wavelengths, and pivot must be positive")
+
+    curves = (
+        normalizations[:, None]
+        * (wavelengths[None, :] / float(pivot)) ** slopes[:, None]
+    )
+    lo, med, hi = np.percentile(curves, [16.0, 50.0, 84.0], axis=0)
+    return lo, med, hi
+
+
 def _component_display_name(component: str) -> str:
     """Return a human-readable label without changing the product identifier."""
     match = re.fullmatch(r"comp(\d+)", str(component).lower())
@@ -729,12 +1081,12 @@ def _sed_product_metadata(ff: dict[str, Any]) -> dict[str, str]:
 
 
 def _sed_plot_text(source: str, component: str) -> tuple[str, str]:
-    """Return the source-only title and component-aware data label."""
-    return str(source), f"FFA {_component_display_name(component)}"
+    """Return a blank panel title and a component-aware data label."""
+    return "", f"FFA {_component_display_name(component)} RMS amplitude"
 
 
 def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[str, Path]:
-    """Propagate the joint FFA posterior through slim/standard/free SED fits."""
+    """Fit disk SED shapes to the joint FFA RMS-amplitude posterior."""
     import matplotlib.pyplot as plt
 
     source = str(ff.get("source") or src.name)
@@ -744,7 +1096,6 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
     pivot = float(np.exp(np.mean(np.log(waves))))
     x = np.log(waves / pivot)
 
-    points = pd.read_csv(components_csv).set_index("Filter").loc[bands].reset_index()
     expected_posterior = (
         components_csv.parent
         / f"{source}_{component}_{len(bands)}band_flux_posterior.txt"
@@ -762,21 +1113,14 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
             f"{[path.name for path in posterior_candidates]}"
         )
     posterior = pd.read_csv(posterior_path, sep=r"\s+")
-    flux_columns = [f"Delta_F_{band}" for band in bands]
-    missing = [column for column in flux_columns if column not in posterior]
-    if missing:
-        raise KeyError(f"missing FFA posterior columns: {missing}")
-
-    delta_flux = posterior[flux_columns].to_numpy(float)
-    y_samples = delta_flux * waves[None, :]
-    good = np.all(np.isfinite(y_samples) & (y_samples > 0.0), axis=1)
-    y_samples = y_samples[good]
+    y_samples = _joint_rms_sed_samples(posterior, bands, waves)
     if len(y_samples) < 20:
-        raise ValueError(f"too few positive joint SED posterior draws: {len(y_samples)}")
+        raise ValueError(
+            f"too few positive joint RMS SED posterior draws: {len(y_samples)}"
+        )
 
-    y50 = waves * points["Delta_F_p50"].to_numpy(float)
-    yerr = waves * points["Delta_F_err"].to_numpy(float)
-    sigma_log = np.clip(yerr / y50, 1.0e-4, None)
+    y16, y50, y84 = np.percentile(y_samples, [16.0, 50.0, 84.0], axis=0)
+    sigma_log = np.clip(0.5 * (y84 - y16) / y50, 1.0e-4, None)
     log_y = np.log(y_samples)
 
     configured = dict(ff.get("sed_models", {}) or {})
@@ -816,6 +1160,8 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
             "component": component,
             "product_id": product_id,
             "model": str(model_name),
+            "sed_quantity": "lambda_R_lambda",
+            "credible_interval": "marginal_p16_p84_from_joint_posterior",
             "n_band": len(bands),
             "n_posterior": len(norm),
             "pivot_angstrom": pivot,
@@ -846,6 +1192,7 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
             "model": str(model_name),
             "component": component,
             "product_id": product_id,
+            "sed_quantity": "lambda_R_lambda",
             "sample": np.arange(len(norm)),
             "normalization": norm,
             "sed_alpha": alpha_samples,
@@ -869,14 +1216,20 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
         point_rows.append({
             "band": band,
             "wavelength_angstrom": waves[index],
-            "lambda_delta_flux_p16": q16,
-            "lambda_delta_flux_p50": q50,
-            "lambda_delta_flux_p84": q84,
+            "quantity": "lambda_R_lambda",
+            "lambda_rms_p16": q16,
+            "lambda_rms_p50": q50,
+            "lambda_rms_p84": q84,
         })
     pd.DataFrame(point_rows).to_csv(points_path, index=False)
 
+    # Reuse the unit-variance latent-process response posterior without a
+    # draw-by-draw normalization transform.  These are the same p16/p50/p84
+    # intervals shown in the host/RMS diagnostic figure.
+    plot_yerr = np.vstack((y50 - y16, y84 - y50))
+
     xx = np.logspace(np.log10(waves.min() * 0.9), np.log10(waves.max() * 1.1), 400)
-    colors = {"free": "#0072B2", "standard": "#D55E00", "slim": "0.35"}
+    colors = {"free": "#CC79A7", "standard": "#D55E00", "slim": "0.35"}
     styles = {"free": "-", "standard": "--", "slim": ":"}
     title, data_label = _sed_plot_text(source, component)
     with plt.rc_context({
@@ -888,25 +1241,28 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
     }):
         fig, ax = plt.subplots(figsize=(6.4, 4.8))
         ax.errorbar(
-            waves, y50, yerr=yerr, fmt="o", color="black", markersize=5,
+            waves, y50, yerr=plot_yerr, fmt="D", color="#0072B2", markersize=5,
             capsize=2, label=data_label, zorder=5,
         )
         for model_name in hypotheses:
             name = str(model_name)
             norm, alpha_samples = fit_cache[name]
             use = np.linspace(0, len(norm) - 1, min(1000, len(norm)), dtype=int)
-            curves = norm[use, None] * (xx[None, :] / pivot) ** alpha_samples[use, None]
-            lo, med, hi = np.percentile(curves, [16, 50, 84], axis=0)
+            _, med, _ = _powerlaw_posterior_envelope(
+                norm[use], alpha_samples[use], xx, pivot
+            )
             color = colors.get(name, "0.2")
-            if name == "free":
-                ax.fill_between(xx, lo, hi, color=color, alpha=0.16, linewidth=0)
             ax.plot(xx, med, color=color, linestyle=styles.get(name, "-"),
                     linewidth=2.0, label=name.capitalize())
         ax.set_xscale("log")
         ax.set_yscale("log")
-        ax.set_xlabel(r"Observed wavelength [$\AA$]")
-        ax.set_ylabel(r"$\lambda\,\Delta F_\lambda$")
-        ax.set_title(title, loc="left")
+        ax.set_xlabel(r"Wavelength [$\AA$]")
+        ax.set_ylabel(
+            r"$\lambda\,R_\lambda$ "
+            r"[$10^{-15}\,\mathrm{erg\,s^{-1}\,cm^{-2}}$]"
+        )
+        if title:
+            ax.set_title(title, loc="left")
         ax.legend(frameon=False, ncol=2)
         ax.grid(alpha=0.18, which="major")
         ax.tick_params(which="both", direction="in", top=True, right=True)
@@ -933,22 +1289,47 @@ def main() -> None:
     parser.add_argument("--steps", help="comma-separated steps or all")
     parser.add_argument("--config-section", default="fflux")
     parser.add_argument("--posterior-branch")
+    parser.add_argument("--mica-stage")
+    parser.add_argument("--mica-component", default="comp0")
+    parser.add_argument(
+        "--fit-restart",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "resume the fit step from a CDNest checkpoint under the configured "
+            "fit directory (for example restart_dnest.txt_2000)"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     src = source_dir(args.source)
     cfg_path = config_path(src, args.config)
     config = read_yaml(cfg_path)
+    if args.posterior_branch and args.mica_stage:
+        parser.error("--posterior-branch and --mica-stage are mutually exclusive")
     if args.posterior_branch:
         ff = posterior_branch_fflux_config(
             src, config, args.config_section, args.posterior_branch
         )
+    elif args.mica_stage:
+        ff = mica_component_fflux_config(
+            src,
+            config,
+            args.config_section,
+            args.mica_stage,
+            args.mica_component,
+        )
     else:
         ff = fflux_config(config, args.config_section)
     steps = parse_steps(args.steps, ff)
+    if args.fit_restart is not None and "fit" not in steps:
+        parser.error("--fit-restart requires the fit step")
 
     if RANK == 0:
-        normalized = run_config(src, config, ff, steps)
+        normalized = run_config(
+            src, config, ff, steps, fit_restart=args.fit_restart
+        )
         log(f"source: {src}")
         log(f"config: {cfg_path}")
         log(f"steps: {', '.join(steps)}")
@@ -972,7 +1353,10 @@ def main() -> None:
             COMM.Barrier()
 
         elif step == "fit":
-            output = run_fit(src, ff)
+            if args.fit_restart is None:
+                output = run_fit(src, ff)
+            else:
+                output = run_fit_restart(src, ff, args.fit_restart)
             if RANK == 0:
                 log(f"fit   -> {output}")
                 log(f"        {output / 'flux_flux_posterior.txt'}")

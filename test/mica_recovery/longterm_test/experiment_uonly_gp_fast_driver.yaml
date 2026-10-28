@@ -1,0 +1,108 @@
+# Inference-only saved inputs. Prepare only with prepare_fast_driver_recovery.py; do not use generic prepare.py.
+experiment:
+  seed: 2026100101
+  output_dir: cases_fast_driver
+  simulation_source: LTSIM
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+paired_ablation:
+  cases:
+    disk_blr_uonly_gp_tauI0p5:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+    disk_blr_uonly_gp_tauI0p5_u_s5:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+    disk_blr_uonly_gp_tauI0p5_u_s10:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+    disk_blr_uonly_gp_tauI0p5_u_s20:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+    disk_blr_uonly_gp_tauI0p5_u_s40:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+mica_fit:
+  centroid_lag_days:
+  - 0.0
+  - 100.0
+  sigma_days:
+  - 0.14195358
+  - 152.84
+  gamma_sigma_days:
+  - 0.20075267806341413
+  - 216.14840087310387
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01
+generation:
+  input_case: /home/leonhard/sci001/test/mica_recovery/longterm_test/cases_fast_driver/disk_blr_uonly_gp_tauI0p5
+  manifest: /home/leonhard/sci001/test/mica_recovery/longterm_test/cases_fast_driver/disk_blr_uonly_gp_tauI0p5/config/generation.json
+  parameters:
+    covariance_dt_days: 0.025
+    disk_support_days: 100.0
+    t1_kelvin: 5900.0
+    driver_wavelength_observed_angstrom: 1928.0
+    response_wavelength_observed_angstrom: 3465.0
+    driver_tau_days: 0.5
+    blr_theta_days: 7.0
+    long_tau_days: 55.3735295468
+    short_tau_days: 10.0
+    redshift: 0.031
+    response_disk_gain: 0.787
+    response_blr_gain: 0.15
+    blr_onset_days: 6.0
+    long_q: 0.623041375227
+    long_response_gain: 1.27560869565
+    long_lag_days: 2.90964381881
+    short_q: 0.0
+    short_response_gain: 0.0
+    short_lag_days: 0.0
+    inclination_deg: 45.0
+    covariance_n: 524288
+    disk_fine_factor: 4
+    disk_origin_cells: 256
+    disk_origin_order: 24
+    blr: true
+    shared_driver: false
+    shared_response: true
+    unfiltered_response_gp: true
+    independent_gp_tau_days: 55.3735295468
+    independent_gp_amplitude: 0.15396862368414638
+    independent_gp_seed: 2026091901
+  alpha: 0.15291719122700673
+  amplitude_rule: Fixed reference alpha and unit stationary variance of latent DRW.
+    No recalibration of W2 RMS and no realization RMS rescaling.
+  inference_only: true
+detrending:
+  input_case: /home/leonhard/sci001/test/mica_recovery/longterm_test/cases_fast_driver/disk_blr_uonly_gp_tauI0p5
+  bands:
+  - U
+  sigma_days:
+  - 5
+  - 10
+  - 20
+  - 40
+  formula: original - Gaussian weighted trend + original mean
+  error_mode: original
+  inference_only: true

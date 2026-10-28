@@ -1,0 +1,90 @@
+# 只读取已完成的 distance 结果；不启动 MICA、FFA 或单源 H0 拟合。
+# 主入口：python main.py hubble；也可直接运行 src/joint_hubble.py 并传入本配置。
+output_dir: output/joint_hubble
+
+# 原始 Mrk817 不自动代替 Mrk817_a；两者不能当作两个独立 AGN。
+sources:
+  - F9_a
+  - Mrk142
+  - Mrk279_b
+  - Mrk335
+  - Mrk509
+  - Mrk817_a
+  - NGC2617_a
+  - NGC4151_a
+  - NGC4593
+  - NGC5548
+  - NGC6814
+
+disk_models: [standard, slim, free]
+bands: all
+missing: skip                 # skip: 列出缺失，使用已有结果；error: 缺一项就停止
+sample_policy: available      # common: 各方案/盘模型只用共同具备结果的源
+
+# sources 决定目标；datasets 把结果别名映射到每个源内的精确目录。
+# 路径相对于每个源目录；旧 gamma2 和新版 gamma/free 明确区分。
+datasets:
+  gamma2_legacy: runs/mica/gamma2/2comp/result/comp0
+  gamma2_phys: runs/mica/gamma/phys12/2comp/result/comp0
+  gamma2_physw: runs/mica/gamma/phys12_width12/2comp/result/comp0
+  mix220: runs/mica/mix220/phys12_slow3/result/comp0
+  gaussian2_free: runs/mica/gaussian/free/2comp/result/comp0
+
+# analyses 决定画哪些比较；dataset 是默认结果，source_datasets 可逐源覆盖。
+# 注释掉一个完整条目即可不画该方案。
+analyses:
+  gamma2_legacy:
+    label: Free 2-gamma (legacy)
+    dataset: gamma2_legacy
+  gamma2_phys:
+    label: 2-gamma, centroid priors
+    dataset: gamma2_phys
+  gamma2_physw:
+    label: 2-gamma, centroid + width priors
+    dataset: gamma2_physw
+  mix220:
+    label: 3-component mix220
+    dataset: mix220
+  gaussian2_free:
+    label: Free 2-Gaussian
+    dataset: gaussian2_free
+  selected_2_3comp:
+    label: Selected 2/3-component (exploratory)
+    dataset: gamma2_phys
+    exploratory: true
+    # 固定此前的逐源选择，不在代码里按 H0 接近 70 的程度挑结果。
+    # 原历史表使用 Mrk817；这里坚持当前样本 Mrk817_a，缺失时报告。
+    source_datasets:
+      Mrk142: mix220
+      Mrk509: mix220
+      Mrk817_a: mix220
+      NGC2617_a: mix220
+      NGC4151_a: mix220
+
+cosmology:
+  om0: 0.3
+  # 当前公式输入观测系 tau、lambda、Fnu，保存的 D 对应 D_M；画图转为 D_L。
+  # luminosity 可复现旧代码将保存的 D 直接当 D_L 的约定，不会改原数据。
+  distance_kind: comoving
+  peculiar_velocity_kms: 250
+  # 默认读取 source_config.yaml 的 redshift，尚未统一核验 CMB/流场修正。
+  redshift_overrides: {}
+
+inference:
+  h0_range: [1, 800]           # 均匀 H0 先验；只用一次；网格为对数间隔但先验仍均匀
+  h0_points: 1601
+  band_scatter_range: [0, 1] # 每个源独立的 lnD 波段额外散度；不是 MICA 的 f
+  band_scatter_nodes: 64      # 已在现有126组输入上与128节点交叉检验
+  intrinsic_scatter_max: 2.0 # 源间 lnD 散度，均匀先验；0 表示不加源间散度
+  intrinsic_scatter_points: 201
+
+# 只标记、不自动按结果好坏删源；明确要排除时修改 sources 或 analyses.exclude。
+quality:
+  warn_distance_samples_below: 100
+  warn_mica_ess_below: 100
+
+plot:
+  reference_h0: 70
+  reference_interval: [65, 75] # 仅作图上参考，绝不进入似然或筛选
+  formats: [png, pdf]
+  dpi: 220

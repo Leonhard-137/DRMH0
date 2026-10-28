@@ -1,0 +1,15 @@
+# Input = original - Gaussian smooth + original per-band mean.
+# Up to three cases run concurrently, Gamma before Gaussian; sigma is in observer-frame days.
+source_config: ../../Mrk817_a/config/source_config.yaml
+input_dir: data/original
+cases_dir: cases
+max_parallel: 5
+mpi_per_band: 2
+# Keep original quoted errors for the exploratory MICA comparison. The exact
+# propagated marginal errors and full covariance are saved alongside the data.
+error_mode: original
+cases:
+  responses_s20: {sigma_days: 20.0, smooth_driver: false}
+  responses_s40: {sigma_days: 40.0, smooth_driver: false}
+  all_s20: {sigma_days: 20.0, smooth_driver: true}
+  all_s40: {sigma_days: 40.0, smooth_driver: true}

@@ -1,0 +1,52 @@
+# Matched to the eta=1 expected-likelihood example, not a Starkey disk model.
+# Commands (from this directory):
+# python prepare.py --config experiment_spectral.yaml --suite spectral_shared
+# python plot_inputs.py --config experiment_spectral.yaml --suite spectral_shared
+# python fit.py --config experiment_spectral.yaml --suite spectral_shared --model gaussian
+# Add --run to the last command only when ready to start MICA.
+experiment:
+  seed: 2026091601
+  output_dir: cases
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817_a/fflux/host_sub
+  input_source: Mrk817_a
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_stationary_driver_rms
+  noise: observed_per_epoch_fractional_errors
+
+# Independent x,s with Px=(1-G)P and Ps=GP, G=exp(-omega^2*sigma_s^2/2).
+# P is the two-sided OU PSD with the following stationary RMS and timescale.
+# W=x+s; U=narrow_gain*(narrow_kernel*W)+slow_gain*s(t-lag).
+# Draw the joint process at the observing epochs; no finite hidden grid,
+# no periodic FFT boundary, no realization-by-realization RMS normalization.
+spectral_shared:
+  driver_tau_days: 40.0
+  driver_stationary_rms: 0.16922666718594603
+  narrow_mean_days: 1.0
+  narrow_sigma_days: 0.1
+  narrow_gain: 0.7
+  slow_sigma_days: 80.0
+  slow_gain: 0.3
+  cases:
+    spectral_shared_tau040d_lag030d_sigma080d:
+      lag_days: 30.0
+
+mica_fit:
+  # Mrk817_a Gaussian U run: native centroid ordering and log-uniform widths.
+  # These are exp(-2.024376), exp(4.941880) from para_names_line.txt_2.
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.13207623304894267, 140.0332647860215]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  # Native positive-amplitude prior remains log-uniform [1e-5,10].
+  # DRW priors come from this simulated driver's continuum fit, not its truth
+  # or Mrk817's saved continuum posterior. Gamma is available as a control;
+  # the expected-likelihood prediction applies to --model gaussian only.
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.1

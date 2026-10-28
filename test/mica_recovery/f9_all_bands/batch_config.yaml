@@ -1,0 +1,30 @@
+# Run the 15 new fits in two sequential groups: 8 concurrent, then 7 concurrent.
+parent_experiment: ../f9_m2_b
+driver: W2
+all_response_bands:
+- M2
+- W1
+- U
+- B
+- V
+new_response_bands:
+- W1
+- U
+- V
+reused_response_bands:
+- M2
+- B
+cases:
+- disk_only
+- response_within
+- random_within
+- response_beyond
+- random_beyond
+stage: mica_recovery
+noise_seed_children:
+  W1: 6
+  U: 7
+  V: 8
+fit_batch_sizes:
+- 8
+- 7

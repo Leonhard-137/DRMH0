@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,55 @@ class GaussianMomentTests(unittest.TestCase):
         )
         self.assertAlmostEqual(float(centroid[0]), 1.0, places=10)
         self.assertAlmostEqual(float(total[0]), 4.0, places=8)
+
+
+class MixedMomentTests(unittest.TestCase):
+    def test_mix220_uses_each_kernel_variance_and_preserves_comp0(self):
+        cfg = {
+            "_mica_stage": "mica_mix220",
+            "response_bands": ["U"],
+            "mica_mix220": {
+                "driver": "W2",
+                "responses": ["U"],
+                "type_tf": "220",
+                "number_component": [3, 3],
+            },
+        }
+        rows = []
+        values = [
+            ("tf0", "gamma", 0.2, 0.1, 1.0),
+            ("tf1", "gamma", 6.0, 0.5, 2.0),
+            ("tf2", "gaussian", 60.0, 10.0, 1.0),
+        ]
+        for component, kind, tau, width, amp in values:
+            rows.append({
+                "run_name": "run_W2_to_U_3comp_mix220",
+                "driver_band": "W2",
+                "band": "U",
+                "model": "mix220",
+                "ncomp": 3,
+                "selection": "all",
+                "retained_weight": 1.0,
+                "lambda_obs": 3465.0,
+                "sample": 0,
+                "component": component,
+                "tf_kind": kind,
+                "center": tau,
+                "tau": tau,
+                "width": width,
+                "amp": amp,
+                "amp_frac": amp / 4.0,
+                "weight": 1.0,
+            })
+        result = fit_tau.transfer_moment2_posterior(pd.DataFrame(rows), cfg)
+        by_component = result.set_index("component")
+        self.assertAlmostEqual(float(by_component.loc["tf0", "moment2"]), 0.02)
+        self.assertAlmostEqual(float(by_component.loc["tf1", "moment2"]), 0.5)
+        self.assertAlmostEqual(float(by_component.loc["tf2", "moment2"]), 100.0)
+        expected_centroid = 0.25 * 0.2 + 0.5 * 6.0 + 0.25 * 60.0
+        self.assertAlmostEqual(
+            float(by_component.loc["total", "moment1"]), expected_centroid
+        )
 
 
 class MomentWavelengthFitTests(unittest.TestCase):

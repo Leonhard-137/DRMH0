@@ -22,7 +22,7 @@ import pandas as pd
 
 from collect_mica_results import (
     arr,
-    col,
+    component_parameter_arrays,
     mica_result_dir,
     model_kinds,
     model_label,
@@ -55,6 +55,7 @@ DECOMPOSITION_SETTING_KEYS = (
     "lag_limit",
     "type_lag_prior",
     "lag_prior",
+    "lag_prior_by_band",
     "width_limit",
     "width_prior",
     "flag_lag_posivity",
@@ -241,22 +242,6 @@ def branch_run_dir(source_dir: Path, fit: dict, branch_id: str, band: str) -> Pa
     return branch_root(source_dir, fit, branch_id) / "decomposition" / run_name(fit, band)
 
 
-def raw_component_arrays(sample: np.ndarray, names: list[str], ncomp: int):
-    centers = np.vstack([
-        sample[:, col(names, f"{index}-th_component_center")]
-        for index in range(ncomp)
-    ])
-    widths = np.vstack([
-        np.exp(sample[:, col(names, f"{index}-th_component_sigma")])
-        for index in range(ncomp)
-    ])
-    amplitudes = np.vstack([
-        np.exp(sample[:, col(names, f"{index}-th_component_amplitude")])
-        for index in range(ncomp)
-    ])
-    return centers, widths, amplitudes
-
-
 def stage_run(
     source_dir: Path,
     fit: dict,
@@ -278,8 +263,18 @@ def stage_run(
     sample, label_swapped = reorder_component_columns(
         sample, names, ncomp, model, fit
     )
-    centers, widths, amplitudes = raw_component_arrays(sample, names, ncomp)
-    features = posterior_features(centers, widths, amplitudes)
+    centers, widths, amplitudes, centroids = component_parameter_arrays(
+        sample,
+        names,
+        ncomp,
+        model,
+    )
+    features = posterior_features(
+        centers,
+        widths,
+        amplitudes,
+        centroids=centroids,
+    )
     keep = branch_mask(branch_id, definition, features)
     parent_mass = float(np.sum(raw_weights[keep]))
     if parent_mass <= 0.0:
@@ -464,7 +459,20 @@ def write_decomposition_summaries(path: Path, rows: list[dict]) -> None:
     frame[human_columns].to_csv(path, index=False)
 
 
-def worker(source_dir: Path, branch_id: str, band: str) -> None:
+def config_path(source_dir: Path, path: Path | None = None) -> Path:
+    """Resolve an optional configuration relative to the source directory."""
+    if path is None:
+        return source_dir / "config" / "source_config.yaml"
+    path = path.expanduser()
+    return path.resolve() if path.is_absolute() else (source_dir / path).resolve()
+
+
+def worker(
+    source_dir: Path,
+    branch_id: str,
+    band: str,
+    config_file: Path | None = None,
+) -> None:
     """MPI worker: decompose one staged branch posterior without CDNest."""
     os.environ.setdefault("MPLBACKEND", "Agg")
     from mpi4py import MPI
@@ -473,7 +481,7 @@ def worker(source_dir: Path, branch_id: str, band: str) -> None:
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    cfg = read_yaml(source_dir / "config" / "source_config.yaml")
+    cfg = read_yaml(config_path(source_dir, config_file))
     fit = fit_config(cfg)
     target = branch_run_dir(source_dir, fit, branch_id, band)
     if not target.is_dir():
@@ -490,7 +498,7 @@ def worker(source_dir: Path, branch_id: str, band: str) -> None:
         }
     data = comm.bcast(data, root=0)
     model = pymica.gmodel()
-    kwargs = setup_kwargs(fit, data)
+    kwargs = setup_kwargs(fit, data, band)
     model.setup(**kwargs)
     ncomp = int(fit.get("ncomp", 2))
     posterior_file = f"./data/posterior_sample1d.txt_{ncomp}"
@@ -506,7 +514,11 @@ def worker(source_dir: Path, branch_id: str, band: str) -> None:
     plot_error = None
     if rank == 0 and bool(fit.get("plot_decomp", True)):
         try:
-            model.plot_decomp(doshow=False)
+            if ncomp == 1:
+                from run_mica import plot_decomposition
+                plot_decomposition(model, fit)
+            else:
+                model.plot_decomp(doshow=False)
         except Exception as exc:  # broadcast before raising to avoid an MPI deadlock
             plot_error = f"conditional decomposition plot failed: {exc}"
     plot_error = comm.bcast(plot_error, root=0)
@@ -520,6 +532,7 @@ def launch_group(
     branch_id: str,
     bands: list[str],
     config: dict,
+    config_file: Path | None = None,
 ) -> None:
     log_dir = branch_root(source_dir, fit, branch_id) / "decomposition" / "_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -561,6 +574,8 @@ def launch_group(
             "--band",
             band,
         ]
+        if config_file is not None:
+            command.extend(["--config", str(config_path(source_dir, config_file))])
         handle = log_path.open("w", encoding="utf-8")
         process = subprocess.Popen(
             command,
@@ -594,8 +609,9 @@ def controller(
     requested_band: str | None,
     stage_only: bool,
     skip_complete: bool,
+    config_file: Path | None = None,
 ) -> None:
-    cfg = read_yaml(source_dir / "config" / "source_config.yaml")
+    cfg = read_yaml(config_path(source_dir, config_file))
     fit = stage_config(cfg, "r1")
     definitions = branch_definitions(fit)
     config = branch_config(fit)
@@ -647,7 +663,7 @@ def controller(
 
         max_parallel = max(1, int(config.get("max_parallel", fit.get("max_parallel", 1))))
         for group in batches(pending_bands, max_parallel):
-            launch_group(source_dir, fit, branch_id, group, config)
+            launch_group(source_dir, fit, branch_id, group, config, config_file=config_file)
 
         for row in rows:
             target = Path(row["run_dir"])
@@ -665,6 +681,7 @@ def controller(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_dir", type=Path)
+    parser.add_argument("--config", type=Path, help="configuration path, relative to the source directory")
     parser.add_argument("--branch", help="one configured posterior branch")
     parser.add_argument("--all-branches", action="store_true")
     parser.add_argument("--band", help="one response band")
@@ -686,10 +703,10 @@ def main() -> None:
     if args.worker:
         if not args.branch or not args.band:
             parser.error("--worker requires --branch and --band")
-        worker(source_dir, args.branch, args.band)
+        worker(source_dir, args.branch, args.band, config_file=args.config)
         return
 
-    cfg = read_yaml(source_dir / "config" / "source_config.yaml")
+    cfg = read_yaml(config_path(source_dir, args.config))
     definitions = branch_definitions(stage_config(cfg, "r1"))
     if args.all_branches:
         branch_ids = list(definitions)
@@ -703,6 +720,7 @@ def main() -> None:
         args.band,
         args.stage_only,
         args.skip_complete,
+        config_file=args.config,
     )
 
 

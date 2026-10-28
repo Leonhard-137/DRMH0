@@ -12,7 +12,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from posterior_branches import branch_result_relative_dir
+from collect_mica_results import (
+    configured_stages,
+    mica_analysis_dir as _mica_analysis_dir,
+    mica_run_root as _mica_run_root,
+    ncomp_from_config as _ncomp_from_config,
+    stage_config,
+)
+from posterior_branches import branch_definitions, branch_result_relative_dir
 
 C_KM_S = 299792.458
 C_AA_S = 2.99792458e18
@@ -51,7 +58,7 @@ def redshift(cfg: dict) -> float:
 
 def bands_and_waves(cfg: dict) -> tuple[list[str], dict[str, float]]:
     """Use a distance-specific band list, or the pipeline response bands."""
-    mica = cfg.get("mica_round1", {}) or {}
+    mica = mica_fit(cfg)
     hd = cfg.get("hubble_distance", {}) or {}
     reference = cfg.get("reference_band", cfg.get("driver_band", mica.get("driver")))
     if reference is None:
@@ -79,22 +86,25 @@ def bands_and_waves(cfg: dict) -> tuple[list[str], dict[str, float]]:
 
 
 def ncomp_from_config(fit: dict) -> int:
-    if "ncomp" in fit:
-        return int(fit["ncomp"])
-    nc = fit.get("number_component", [2, 2])
-    return int(nc[0] if isinstance(nc, list) else nc)
+    return _ncomp_from_config(fit)
+
+
+def mica_fit(cfg: dict) -> dict:
+    return stage_config(cfg, str(cfg.get("_mica_stage", "mica_round1")))
 
 
 def mica_run_root(source_dir: Path, cfg: dict) -> Path:
-    mica = cfg.get("mica_round1", {}) or {}
-    root = rel(source_dir, mica.get("output_root", "runs/mica"))
-    return root / f"{ncomp_from_config(mica)}comp"
+    return _mica_run_root(source_dir, mica_fit(cfg))
 
 
-def mica_result_dir(source_dir: Path, cfg: dict) -> Path:
+def mica_collection_dir(source_dir: Path, cfg: dict) -> Path:
     out = mica_run_root(source_dir, cfg) / "result"
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def mica_result_dir(source_dir: Path, cfg: dict) -> Path:
+    return _mica_analysis_dir(source_dir, mica_fit(cfg), "comp0")
 
 
 def distance_result_dir(source_dir: Path, cfg: dict) -> Path:
@@ -103,7 +113,7 @@ def distance_result_dir(source_dir: Path, cfg: dict) -> Path:
     out = (
         rel(source_dir, hd["output_dir"])
         if hd.get("output_dir")
-        else mica_result_dir(source_dir, cfg)
+        else mica_result_dir(source_dir, cfg) / "distance"
     )
     out.mkdir(parents=True, exist_ok=True)
     return out
@@ -114,8 +124,7 @@ def flux_posterior_path(source_dir: Path, cfg: dict) -> Path:
     if hd.get("flux_posterior"):
         return rel(source_dir, hd["flux_posterior"])
 
-    ff = cfg.get("fflux", {}) or {}
-    root = rel(source_dir, ff.get("out", "fflux")) / "analysis"
+    root = mica_result_dir(source_dir, cfg) / "fflux" / "analysis"
     hits = []
     for path in sorted(root.glob("*_flux_posterior.txt")):
         header = path.open("r", encoding="utf-8").readline()
@@ -130,14 +139,14 @@ def lag_posterior_path(source_dir: Path, cfg: dict) -> Path:
     hd = cfg.get("hubble_distance", {}) or {}
     if hd.get("lag_posterior"):
         return rel(source_dir, hd["lag_posterior"])
-    return mica_result_dir(source_dir, cfg) / "absolute_lag_posterior.txt"
+    return mica_result_dir(source_dir, cfg) / "lag" / "absolute_lag_posterior.txt"
 
 
 def tau0_posterior_path(source_dir: Path, cfg: dict) -> Path:
     hd = cfg.get("hubble_distance", {}) or {}
     if hd.get("tau0_posterior"):
         return rel(source_dir, hd["tau0_posterior"])
-    return mica_result_dir(source_dir, cfg) / "tau0_posterior.txt"
+    return mica_result_dir(source_dir, cfg) / "lag" / "tau0_posterior.txt"
 
 
 def i_n(n: float, disk_b: float) -> float:
@@ -599,13 +608,7 @@ def distance_branch_root(source_dir: Path, cfg: dict) -> Path:
     hd = cfg.get("hubble_distance", {}) or {}
     if hd.get("result_root"):
         return rel(source_dir, hd["result_root"])
-    mica = cfg.get("mica_round1", {}) or {}
-    branch_id = str(hd.get("posterior_branch", "comp0"))
-    return (
-        mica_run_root(source_dir, cfg)
-        / "result"
-        / branch_result_relative_dir(mica, branch_id)
-    )
+    return mica_result_dir(source_dir, cfg)
 
 
 def run_distance_models(
@@ -700,6 +703,8 @@ def run(
     no_mcmc=False,
     disk_b=None,
     inclination_deg=None,
+    posterior_branch=None,
+    stage=None,
     _cfg=None,
     _single_model=False,
 ):
@@ -707,6 +712,20 @@ def run(
     cfg = copy.deepcopy(_cfg) if _cfg is not None else read_yaml(
         source_dir / "config" / "source_config.yaml"
     )
+    if stage is not None:
+        cfg["_mica_stage"] = str(stage)
+    cfg.setdefault("_mica_stage", "mica_round1")
+    stage_config(cfg, str(cfg["_mica_stage"]))
+    if posterior_branch is not None:
+        definitions = branch_definitions(mica_fit(cfg))
+        if posterior_branch not in definitions:
+            available = ", ".join(definitions) if definitions else "none"
+            raise ValueError(
+                f"unknown or disabled posterior branch {posterior_branch!r}; "
+                f"available: {available}"
+            )
+        cfg["hubble_distance"] = dict(cfg.get("hubble_distance", {}) or {})
+        cfg["hubble_distance"]["posterior_branch"] = str(posterior_branch)
     if not _single_model and (cfg.get("hubble_distance", {}) or {}).get("models"):
         return run_distance_models(
             source_dir,
@@ -807,15 +826,27 @@ def main():
         help="temperature-profile exponent b in T proportional to R^(-b)",
     )
     ap.add_argument("--inclination-deg", type=float, help="disk inclination in degrees")
-    args = ap.parse_args()
-    run(
-        args.source_dir,
-        args.steps,
-        args.ncores,
-        args.no_mcmc,
-        args.disk_b,
-        args.inclination_deg,
+    ap.add_argument("--stage", help="one MICA config section; default: all mica_stages")
+    ap.add_argument(
+        "--posterior-branch",
+        help="override hubble_distance.posterior_branch with one configured branch",
     )
+    args = ap.parse_args()
+    source_dir = args.source_dir.expanduser().resolve()
+    cfg = read_yaml(source_dir / "config" / "source_config.yaml")
+    stages = [args.stage] if args.stage else configured_stages(cfg)
+    for stage in stages:
+        print(f"\n== MICA stage: {stage}; native comp0 distance ==", flush=True)
+        run(
+            source_dir,
+            steps=args.steps,
+            ncores=args.ncores,
+            no_mcmc=args.no_mcmc,
+            disk_b=args.disk_b,
+            inclination_deg=args.inclination_deg,
+            posterior_branch=args.posterior_branch,
+            stage=stage,
+        )
 
 
 if __name__ == "__main__":

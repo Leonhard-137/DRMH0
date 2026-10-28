@@ -1,0 +1,68 @@
+# One shared process plus causal disk and BLR responses.
+# Frozen candidate: predict/one_shared_check_20260919.json,
+# one_shared_initial_refined. Predictions are not sampled MICA results.
+# W = alpha * DW * (I + sqrt(q) S)
+# U = alpha * ((a DU + b BLR) * I + h sqrt(q) DU * S(t-delta))
+# I and S are independent. No negative-lag physical response is injected.
+#
+# python prepare.py --config experiment_one_shared_blr.yaml --suite real_disk_mismatch
+# python fit.py --config experiment_one_shared_blr.yaml --suite real_disk_mismatch --batch-size 2 --run
+experiment:
+  seed: 2026091901
+  output_dir: cases_one_shared_blr
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  # Expected sample-demeaned W2 RMS; do not rescale each realization.
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+
+real_disk_mismatch:
+  candidate_id: one_shared_initial_refined
+  covariance_dt_days: 0.025
+  covariance_n: 524288
+  disk_support_days: 100.0
+  disk_fine_factor: 4
+  disk_origin_cells: 256
+  disk_origin_order: 24
+  t1_kelvin: 5900.0
+  inclination_deg: 45.0
+  redshift: 0.031
+  driver_wavelength_observed_angstrom: 1928.0
+  response_wavelength_observed_angstrom: 3465.0
+  driver_tau_days: 30.0
+  response_disk_gain: 0.787
+  response_blr_gain: 0.15
+  blr_onset_days: 6.0
+  blr_theta_days: 7.0
+  # Unit-variance shared S: C(h)=(1+|h|/T)exp(-|h|/T).
+  long_q: 0.623041375227
+  long_tau_days: 55.3735295468
+  long_response_gain: 1.27560869565
+  long_lag_days: 2.90964381881
+  # Disable the second shared process; the positive timescale is unused.
+  short_q: 0.0
+  short_tau_days: 10.0
+  short_response_gain: 0.0
+  short_lag_days: 0.0
+  cases:
+    one_shared_initial_refined: {}
+
+mica_fit:
+  # Same native priors as the full Mrk817 Gaussian/free and Gamma/free100 fits.
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.14195358, 152.84]
+  # Physical Gamma standard deviation; fit.py converts to native theta.
+  gamma_sigma_days: [0.20075267806341413, 216.14840087310387]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01

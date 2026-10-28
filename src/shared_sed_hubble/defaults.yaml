@@ -1,0 +1,16 @@
+# Shared standard-SED FFA -> one D_L per AGN -> ten-term H0 MCMC.
+# Physical assumptions are fixed in inference.py; this file selects inputs/output.
+output_dir: output/shared_sed_hubble
+result_subdir: runs/mica/gamma/phys12_width12_relaxed/2comp/result/comp0
+parallel: 3
+sources:
+  - F9_a
+  - Mrk142
+  - Mrk279_b
+  - Mrk335
+  - Mrk509
+  - Mrk817_a
+  - NGC2617_a
+  - NGC4151_a
+  - NGC5548
+  - NGC6814

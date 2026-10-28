@@ -12,6 +12,15 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from collect_mica_results import (
+    configured_stages,
+    mica_analysis_dir as _mica_analysis_dir,
+    mica_run_root as _mica_run_root,
+    model_kinds,
+    model_label as _model_label,
+    ncomp_from_config as _ncomp_from_config,
+    stage_config,
+)
 from posterior_branches import (
     branch_definitions,
     branch_result_relative_dir,
@@ -55,7 +64,8 @@ MOMENT2_MODELS = {
     },
 }
 
-MOMENT2_COMPONENTS = ("tf0", "tf1", "total")
+# Downstream disk inference is intentionally based on native comp0 only.
+MOMENT2_COMPONENTS = ("tf0",)
 
 MOMENT0_MODELS = {
     "standard": {
@@ -115,27 +125,29 @@ def weighted_quantile(values, weights, quantiles=(0.15865, 0.5, 0.84135)):
 
 
 def model_label(model) -> str:
-    model = str(model).lower()
-    return TF_LABELS.get(model, model)
+    return _model_label(model)
 
 
 def ncomp_from_config(fit: dict) -> int:
-    if "ncomp" in fit:
-        return int(fit["ncomp"])
-    nc = fit.get("number_component", [2, 2])
-    return int(nc[0] if isinstance(nc, list) else nc)
+    return _ncomp_from_config(fit)
+
+
+def mica_fit(cfg: dict) -> dict:
+    return stage_config(cfg, str(cfg.get("_mica_stage", "mica_round1")))
 
 
 def mica_run_root(source_dir: Path, cfg: dict) -> Path:
-    mica = cfg.get("mica_round1", {}) or {}
-    root = rel(source_dir, mica.get("output_root", "runs/mica"))
-    return root / f"{ncomp_from_config(mica)}comp"
+    return _mica_run_root(source_dir, mica_fit(cfg))
 
 
-def mica_result_dir(source_dir: Path, cfg: dict) -> Path:
+def mica_collection_dir(source_dir: Path, cfg: dict) -> Path:
     out = mica_run_root(source_dir, cfg) / "result"
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def mica_result_dir(source_dir: Path, cfg: dict) -> Path:
+    return _mica_analysis_dir(source_dir, mica_fit(cfg), "comp0")
 
 
 def lambda_tau_result_dir(source_dir: Path, cfg: dict, lt: dict) -> Path:
@@ -144,7 +156,9 @@ def lambda_tau_result_dir(source_dir: Path, cfg: dict, lt: dict) -> Path:
         out = rel(source_dir, lt["result_dir"])
         out.mkdir(parents=True, exist_ok=True)
         return out
-    return mica_result_dir(source_dir, cfg)
+    out = mica_result_dir(source_dir, cfg) / "lag"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
 
 
 def tau_model(wave, tau0, beta, lambda0):
@@ -472,11 +486,11 @@ def posterior_input(source_dir: Path, cfg: dict, lt: dict) -> Path:
         p = rel(source_dir, lt["input"])
         if p.suffix == ".txt":
             return p
-    return mica_result_dir(source_dir, cfg) / "mica_tf0_posterior.txt"
+    return mica_collection_dir(source_dir, cfg) / "mica_tf0_posterior.txt"
 
 
 def reference(cfg: dict, lt: dict, posterior: pd.DataFrame) -> tuple[str, float]:
-    mica = cfg.get("mica_round1", {}) or {}
+    mica = mica_fit(cfg)
     band = str(lt.get("lambda0_band", mica.get("driver", cfg.get("reference_band"))))
     if lt.get("lambda0") is not None:
         return band, float(lt["lambda0"])
@@ -488,7 +502,7 @@ def reference(cfg: dict, lt: dict, posterior: pd.DataFrame) -> tuple[str, float]
 
 def configured_response_bands(cfg: dict) -> list[str]:
     """Return the response-band selection used by MICA and downstream fits."""
-    mica = cfg.get("mica_round1", {}) or {}
+    mica = mica_fit(cfg)
     values = cfg.get("response_bands")
     if values is None:
         values = mica.get("responses", [])
@@ -558,7 +572,7 @@ def posterior_matrix(posterior, cfg, ref_band, nsamp, seed):
         )
 
     groups = []
-    mica = cfg.get("mica_round1", {}) or {}
+    mica = mica_fit(cfg)
     expected_model = model_label(mica.get("type_tf", "gaussian"))
     expected_driver = str(mica.get("driver", ref_band))
     expected_ncomp = ncomp_from_config(mica)
@@ -663,7 +677,7 @@ def second_moment_config(lt: dict) -> dict:
 def component_posterior_input(source_dir: Path, cfg: dict, sm: dict) -> Path:
     if sm.get("posterior_input"):
         return rel(source_dir, sm["posterior_input"])
-    return mica_result_dir(source_dir, cfg) / "mica_component_posterior.txt"
+    return mica_collection_dir(source_dir, cfg) / "mica_component_posterior.txt"
 
 
 def moment0_config(lt: dict) -> dict:
@@ -847,7 +861,7 @@ def run_moment0(
             )
         ax.set_xscale("log")
         ax.set_yscale("log")
-        ax.set_xlabel(r"Observed wavelength $\lambda$ ($\AA$)")
+        ax.set_xlabel(r"Wavelength $\lambda$ ($\AA$)")
         ax.set_ylabel(r"Physical comp0 area $G_0$")
         ax.grid(alpha=0.2)
         ax.legend(frameon=False)
@@ -863,13 +877,15 @@ def run_moment0(
 
 def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Calculate component and total central second moments sample by sample."""
-    mica = cfg.get("mica_round1", {}) or {}
+    mica = mica_fit(cfg)
     expected_model = model_label(mica.get("type_tf", "gaussian"))
     expected_ncomp = ncomp_from_config(mica)
-    if expected_model not in {"gaussian", "gamma"} or expected_ncomp != 2:
+    expected_kinds = model_kinds(expected_model, expected_ncomp)
+    unsupported = sorted(set(expected_kinds).difference({"gaussian", "gamma", "exp"}))
+    if unsupported:
         raise ValueError(
-            "second-moment fitting currently requires an active two-component "
-            "Gaussian or k=2 gamma MICA model"
+            "second-moment calculation does not support transfer function(s): "
+            + ", ".join(unsupported)
         )
 
     required = {
@@ -884,8 +900,10 @@ def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> 
         "sample",
         "component",
         "center",
+        "tau",
         "width",
         "amp",
+        "amp_frac",
         "weight",
     }
     missing_columns = sorted(required.difference(component_posterior.columns))
@@ -920,86 +938,88 @@ def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> 
         "sample",
     ]
     output = []
+    expected_components = [f"tf{index}" for index in range(expected_ncomp)]
     for band in selected:
         data = posterior[posterior["band"].eq(band)].copy()
         observed_components = set(data["component"])
-        if observed_components != {"tf0", "tf1"}:
+        if observed_components != set(expected_components):
             raise ValueError(
-                f"response band {band} must contain exactly tf0 and tf1; "
+                f"response band {band} must contain exactly {expected_components}; "
                 f"found {sorted(observed_components)}"
             )
-        for component in ("tf0", "tf1"):
+        frames = []
+        for component in expected_components:
             subset = data[data["component"].eq(component)]
             if subset["sample"].duplicated().any():
                 raise ValueError(
                     f"response band {band}, {component} contains duplicate sample identifiers"
                 )
+            frames.append(subset.sort_values("sample").reset_index(drop=True))
 
-        tf0 = data[data["component"].eq("tf0")].sort_values("sample").reset_index(drop=True)
-        tf1 = data[data["component"].eq("tf1")].sort_values("sample").reset_index(drop=True)
-        if not np.array_equal(tf0["sample"].to_numpy(), tf1["sample"].to_numpy()):
-            raise ValueError(f"tf0/tf1 posterior samples are not aligned for {band}")
-        for column in (
-            "run_name",
-            "driver_band",
-            "band",
-            "model",
-            "ncomp",
-            "selection",
-            "retained_weight",
-            "lambda_obs",
-            "weight",
-        ):
-            left = tf0[column].to_numpy()
-            right = tf1[column].to_numpy()
-            if np.issubdtype(left.dtype, np.number):
-                equal = np.allclose(left, right, rtol=1.0e-12, atol=0.0, equal_nan=True)
-            else:
-                equal = np.array_equal(left.astype(str), right.astype(str))
-            if not equal:
-                raise ValueError(f"tf0/tf1 {column} values do not match for {band}")
+        reference = frames[0]
+        sample_ids = reference["sample"].to_numpy()
+        for component, frame in zip(expected_components[1:], frames[1:]):
+            if not np.array_equal(sample_ids, frame["sample"].to_numpy()):
+                raise ValueError(
+                    f"tf0/{component} posterior samples are not aligned for {band}"
+                )
+            for column in (
+                "run_name", "driver_band", "band", "model", "ncomp",
+                "selection", "retained_weight", "lambda_obs", "weight",
+            ):
+                left = reference[column].to_numpy()
+                right = frame[column].to_numpy()
+                if np.issubdtype(left.dtype, np.number):
+                    equal = np.allclose(
+                        left, right, rtol=1.0e-12, atol=0.0, equal_nan=True
+                    )
+                else:
+                    equal = np.array_equal(left.astype(str), right.astype(str))
+                if not equal:
+                    raise ValueError(f"tf0/{component} {column} values do not match for {band}")
 
-        model_values = tf0["model"].astype(str).map(model_label).unique().tolist()
-        ncomp_values = pd.to_numeric(tf0["ncomp"], errors="raise").unique().tolist()
-        if model_values != [expected_model] or ncomp_values != [2]:
+        model_values = reference["model"].astype(str).map(model_label).unique().tolist()
+        ncomp_values = pd.to_numeric(reference["ncomp"], errors="raise").unique().tolist()
+        if model_values != [expected_model] or ncomp_values != [expected_ncomp]:
             raise ValueError(
-                f"response band {band} is not a unique two-component "
+                f"response band {band} is not a unique {expected_ncomp}-component "
                 f"{expected_model} posterior"
             )
 
-        centers = np.vstack([
-            pd.to_numeric(tf0["center"], errors="coerce").to_numpy(float),
-            pd.to_numeric(tf1["center"], errors="coerce").to_numpy(float),
-        ])
         widths = np.vstack([
-            pd.to_numeric(tf0["width"], errors="coerce").to_numpy(float),
-            pd.to_numeric(tf1["width"], errors="coerce").to_numpy(float),
+            pd.to_numeric(frame["width"], errors="coerce").to_numpy(float)
+            for frame in frames
         ])
         amplitudes = np.vstack([
-            pd.to_numeric(tf0["amp"], errors="coerce").to_numpy(float),
-            pd.to_numeric(tf1["amp"], errors="coerce").to_numpy(float),
+            pd.to_numeric(frame["amp"], errors="coerce").to_numpy(float)
+            for frame in frames
         ])
-        weights = pd.to_numeric(tf0["weight"], errors="coerce").to_numpy(float)
+        centroids = np.vstack([
+            pd.to_numeric(frame["tau"], errors="coerce").to_numpy(float)
+            for frame in frames
+        ])
+        weights = pd.to_numeric(reference["weight"], errors="coerce").to_numpy(float)
         if not np.isfinite(weights).all() or np.any(weights < 0.0) or np.sum(weights) <= 0.0:
             raise ValueError(f"invalid posterior weights for response band {band}")
 
-        (
-            component_variance,
-            component_centroid,
-            total_centroid,
-            total_variance,
-            fractions,
-        ) = (
-            transfer_mixture_moments(
-                centers, widths, amplitudes, expected_model
-            )
+        component_variance = np.vstack([
+            widths[index] ** 2
+            if kind in {"gaussian", "exp"}
+            else 2.0 * widths[index] ** 2
+            for index, kind in enumerate(expected_kinds)
+        ])
+        fractions = amplitudes / np.sum(amplitudes, axis=0)
+        total_centroid = np.sum(fractions * centroids, axis=0)
+        total_variance = np.sum(
+            fractions * (component_variance + (centroids - total_centroid) ** 2),
+            axis=0,
         )
-        base = tf0[metadata_columns].copy()
+        base = reference[metadata_columns].copy()
         base["weight"] = weights
-        for k, component in enumerate(("tf0", "tf1")):
+        for k, component in enumerate(expected_components):
             frame = base.copy()
             frame["component"] = component
-            frame["moment1"] = component_centroid[k]
+            frame["moment1"] = centroids[k]
             frame["moment2"] = component_variance[k]
             frame["amp_frac"] = fractions[k]
             output.append(frame)
@@ -1013,7 +1033,10 @@ def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> 
     result = pd.concat(output, ignore_index=True)
     if not np.isfinite(result["moment2"]).all() or np.any(result["moment2"] < 0.0):
         raise ValueError("calculated second moments must be finite and non-negative")
-    component_order = {"tf0": 0, "tf1": 1, "total": 2}
+    component_order = {
+        **{component: index for index, component in enumerate(expected_components)},
+        "total": expected_ncomp,
+    }
     result["_component_order"] = result["component"].map(component_order)
     return result.sort_values(
         ["lambda_obs", "sample", "_component_order"]
@@ -1115,8 +1138,10 @@ def plot_moment2_fit(points, fit_summary, lambda0, out_dir):
         1,
         len(MOMENT2_COMPONENTS),
         figsize=(15.0, 4.6),
+        squeeze=False,
         constrained_layout=True,
     )
+    axes = axes.ravel()
     for ax, component in zip(axes, MOMENT2_COMPONENTS):
         component_points = points[points["component"].eq(component)]
         response = component_points[~component_points["is_ref"]]
@@ -1216,9 +1241,16 @@ def run_second_moment(
     free_posterior_rows = []
     free_diagnostic_rows = []
     component_results = {}
-    component_seed_offsets = {"tf0": 100003, "tf1": 200003, "total": 300007}
+    requested_components = tuple(
+        str(value) for value in sm.get("components", MOMENT2_COMPONENTS)
+    )
+    if requested_components != ("tf0",):
+        raise ValueError(
+            "downstream second-moment inference is defined for native comp0 only"
+        )
+    component_seed_offsets = {"tf0": 100003}
 
-    for component in MOMENT2_COMPONENTS:
+    for component in requested_components:
         component_seed = seed + component_seed_offsets[component]
         (
             bands,
@@ -1346,7 +1378,7 @@ def run_second_moment(
     points.to_csv(out_dir / f"{source}_lambda_moment2_points.csv", index=False)
 
     moment20_table = pd.DataFrame({"sample": np.arange(nsamp)})
-    for component in MOMENT2_COMPONENTS:
+    for component in requested_components:
         moment20_post, gamma_post = component_results[component]
         for key in models:
             values = moment20_post[key]
@@ -1451,8 +1483,8 @@ def plot_fit(points, fit_summary, lambda0, out_dir):
 
     ax.axhline(0.0, lw=0.8, ls=":")
     ax.axvline(lambda0, lw=0.8, ls=":")
-    ax.set_xlabel(r"Wavelength $\lambda$ ($\AA$)")
-    ax.set_ylabel("Relative lag (days)")
+    ax.set_xlabel(r"Wavelength [$\AA$]")
+    ax.set_ylabel(r"Relative lag [day]")
     ax.legend(frameon=False)
     fig.savefig(out_dir / "tau_tf0.png", dpi=300)
     fig.savefig(out_dir / "tau_tf0.pdf")
@@ -1628,8 +1660,9 @@ def run(source_dir: Path, cfg: dict, nsamp: int, seed: int, config_section="lamb
             index=False,
         )
     plot_fit(points, fit_summary, lambda0, out_dir)
-    run_moment0(source_dir, cfg, lt, ref_band, lambda0, out_dir)
-    run_second_moment(source_dir, cfg, lt, ref_band, lambda0, out_dir)
+    analysis_root = mica_result_dir(source_dir, cfg)
+    run_moment0(source_dir, cfg, lt, ref_band, lambda0, analysis_root)
+    run_second_moment(source_dir, cfg, lt, ref_band, lambda0, analysis_root)
 
     print(
         "distance/H0 absolute-lag model: "
@@ -1651,7 +1684,7 @@ def branch_analysis_config(
     branch_id: str,
 ) -> dict:
     """Point lag and second-moment analysis at one collected branch."""
-    definitions = branch_definitions(cfg.get("mica_round1", {}) or {})
+    definitions = branch_definitions(mica_fit(cfg))
     if branch_id not in definitions:
         available = ", ".join(definitions) if definitions else "none"
         raise ValueError(
@@ -1660,10 +1693,10 @@ def branch_analysis_config(
 
     branch_cfg = copy.deepcopy(cfg)
     lt = dict(branch_cfg.get(config_section, {}) or {})
-    mica_fit = branch_cfg.get("mica_round1", {}) or {}
+    selected_fit = mica_fit(branch_cfg)
     branch_root = (
         mica_result_dir(source_dir, branch_cfg)
-        / branch_result_relative_dir(mica_fit, branch_id)
+        / branch_result_relative_dir(selected_fit, branch_id)
     )
     tf0_path = branch_root / "mica_tf0_posterior.txt"
     component_path = branch_root / "mica_component_posterior.txt"
@@ -1699,6 +1732,7 @@ def main():
     ap.add_argument("--nsamp", type=int)
     ap.add_argument("--seed", type=int)
     ap.add_argument("--config-section", default="lambda_tau")
+    ap.add_argument("--stage", help="one MICA config section; default: all mica_stages")
     branch_group = ap.add_mutually_exclusive_group()
     branch_group.add_argument("--branch", help="fit one configured posterior branch")
     branch_group.add_argument(
@@ -1713,42 +1747,49 @@ def main():
     if not cfg_path.is_absolute():
         cfg_path = source_dir / cfg_path
     cfg = read_yaml(cfg_path)
-    lt = cfg.get(args.config_section, {}) or {}
-    base_nsamp = args.nsamp or int(lt.get("nsamp", 10000))
-    base_seed = args.seed if args.seed is not None else int(lt.get("seed", 12345))
+    stages = [args.stage] if args.stage else configured_stages(cfg)
+    for stage in stages:
+        stage_cfg = copy.deepcopy(cfg)
+        stage_cfg["_mica_stage"] = stage
+        # Fail before writing if the requested section is absent or malformed.
+        stage_config(stage_cfg, stage)
+        lt = stage_cfg.get(args.config_section, {}) or {}
+        base_nsamp = args.nsamp or int(lt.get("nsamp", 10000))
+        base_seed = args.seed if args.seed is not None else int(lt.get("seed", 12345))
+        print(f"\n== MICA stage: {stage}; native comp0 ==", flush=True)
 
-    if args.all_branches:
-        definitions = branch_definitions(cfg.get("mica_round1", {}) or {})
-        if not definitions:
-            raise ValueError("no enabled posterior branches are configured")
-        branch_ids = list(definitions)
-    elif args.branch:
-        branch_ids = [args.branch]
-    else:
-        branch_ids = []
+        if args.all_branches:
+            definitions = branch_definitions(mica_fit(stage_cfg))
+            if not definitions:
+                raise ValueError("no enabled posterior branches are configured")
+            branch_ids = list(definitions)
+        elif args.branch:
+            branch_ids = [args.branch]
+        else:
+            branch_ids = []
 
-    if not branch_ids:
-        run(source_dir, cfg, base_nsamp, base_seed, args.config_section)
-        return
+        if not branch_ids:
+            run(source_dir, stage_cfg, base_nsamp, base_seed, args.config_section)
+            continue
 
-    for branch_id in branch_ids:
-        print(f"\n== posterior branch: {branch_id} ==", flush=True)
-        branch_cfg = branch_analysis_config(
-            source_dir,
-            cfg,
-            args.config_section,
-            branch_id,
-        )
-        branch_seed = base_seed + stable_seed_offset(branch_id)
-        branch_cfg[args.config_section]["seed"] = branch_seed
-        branch_cfg[args.config_section]["nsamp"] = base_nsamp
-        run(
-            source_dir,
-            branch_cfg,
-            base_nsamp,
-            branch_seed,
-            args.config_section,
-        )
+        for branch_id in branch_ids:
+            print(f"\n== legacy posterior branch: {branch_id} ==", flush=True)
+            branch_cfg = branch_analysis_config(
+                source_dir,
+                stage_cfg,
+                args.config_section,
+                branch_id,
+            )
+            branch_seed = base_seed + stable_seed_offset(branch_id)
+            branch_cfg[args.config_section]["seed"] = branch_seed
+            branch_cfg[args.config_section]["nsamp"] = base_nsamp
+            run(
+                source_dir,
+                branch_cfg,
+                base_nsamp,
+                branch_seed,
+                args.config_section,
+            )
 
 
 if __name__ == "__main__":

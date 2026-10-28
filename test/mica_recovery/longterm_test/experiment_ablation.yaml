@@ -1,0 +1,56 @@
+# Paired switches around the completed one_shared_initial_refined realization.
+# Five new inputs; the sixth completed case is referenced, never refitted.
+experiment:
+  seed: 2026091901
+  output_dir: cases
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+
+paired_ablation:
+  anchor_config: experiment_one_shared_blr.yaml
+  anchor_case: cases_one_shared_blr/one_shared_initial_refined
+  conditional_seed: 2026091902
+  fixed_alpha: 0.15291719122700673
+  cases:
+    abl_disk_only:
+      blr: false
+      shared_driver: false
+      shared_response: false
+    abl_disk_uonly:
+      blr: false
+      shared_driver: false
+      shared_response: true
+    abl_disk_shared:
+      blr: false
+      shared_driver: true
+      shared_response: true
+    abl_disk_blr:
+      blr: true
+      shared_driver: false
+      shared_response: false
+    abl_disk_blr_uonly:
+      blr: true
+      shared_driver: false
+      shared_response: true
+  reused_cases:
+    abl_disk_blr_shared: cases_one_shared_blr/one_shared_initial_refined
+
+mica_fit:
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.14195358, 152.84]
+  gamma_sigma_days: [0.20075267806341413, 216.14840087310387]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01

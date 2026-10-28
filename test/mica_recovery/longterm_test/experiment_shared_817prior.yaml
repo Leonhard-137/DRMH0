@@ -1,0 +1,39 @@
+# Inference-only comparison for the two previously generated shared-slow cases.
+# The case directories below reuse the old input TXT files through symbolic
+# links (the fit workflow only reads them), while configuration snapshots and
+# MICA outputs remain separate.
+# Do not run prepare.py with this file: it is deliberately not a generator config.
+#
+# Validate without writing or fitting:
+# python fit.py --config experiment_shared_817prior.yaml --suite shared_slow
+# Run both Gaussian and Gamma controls:
+# python fit.py --config experiment_shared_817prior.yaml --suite shared_slow --batch-size 2 --run
+
+experiment:
+  seed: 2026091401
+  output_dir: cases_shared_817prior
+  simulation_source: LTSIM
+
+observations:
+  driver_band: UVW2
+  response_band: U
+
+# These are aliases of the existing old-share inputs, not new realizations.
+shared_slow:
+  cases:
+    disk_shared_tau100d_lag200d: {}
+    disk_shared_tau150d_lag015d: {}
+
+mica_fit:
+  # Match the Mrk817_a two-Gaussian U fit. Both centroids use the native
+  # ordered type-0 prior; both widths are log-uniform over the bounds below.
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.13207623304894267, 140.0332647860215]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  # Tighten PTol only; keep one particle per rank to avoid the 4x cost.
+  # Gamma remains an exchangeable-label control with the same physical bounds.
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01

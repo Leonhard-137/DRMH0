@@ -1,0 +1,67 @@
+# Two new paired cases. This file does not change experiment.yaml or old data.
+experiment:
+  seed: 2026091401
+  output_dir: cases
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817_a/fflux/host_sub
+  input_source: Mrk817_a
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: observed_driver_intrinsic_fractional_rms
+  noise: observed_per_epoch_fractional_errors
+
+grid:
+  dt_days: 0.02
+  # Disk quadrature only; the broad Gaussian has its own +/-8 sigma grid.
+  lag_min_days: -10.0
+  lag_max_days: 100.0
+  disk_bin_oversample: 10
+  hidden_padding_tau: 5.0
+
+disk:
+  t1_kelvin: 9041.03
+  inclination_deg: 45.0
+  redshift: 0.031
+  wavelength_observed_angstrom:
+    UVW2: 1928.0
+    U: 3465.0
+
+# Supplies the fast DRW settings without adding any old independent suite case.
+independent_response:
+  driver_tau_days: 40.0
+  rms_ratio: 0.3
+  cases: {}
+
+# Both new cases share fast D and per-epoch noise. The broad-kernel padding
+# changes the seeded fast grid relative to old disk_only: do not pair those.
+shared_slow:
+  tau_days: 150.0
+  driver_rms_ratio: 0.5
+  response_amplitude_ratio: 2.0
+  cases:
+    disk_shared_tau150d_lag015d:
+      lag_days: 15.0
+
+# Explicit W0-to-U kernel; the Gaussian's negative-delay tail is retained.
+# Fractions are kernel areas, NOT the RMS fractions of output light curves.
+known_response:
+  cases:
+    disk_plus_broad_gaussian_mu030d_sigma080d:
+      disk_fraction: 0.7
+      gaussian_fraction: 0.3
+      mean_days: 30.0
+      sigma_days: 80.0
+
+# Same inference priors for both components; none is assigned a physical label.
+# sigma is physical standard deviation for both Gaussian and Gamma fits.
+mica_fit:
+  centroid_lag_days: [-100.0, 300.0]
+  sigma_days: [0.05, 300.0]
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 4
+  ptol: 0.01

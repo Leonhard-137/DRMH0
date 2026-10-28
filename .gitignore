@@ -6,6 +6,7 @@
 
 # Public source and documentation selected for this repository.
 !main.py
+!joint_hubble_config.yaml
 !notes/
 !notes/**
 !scripts/

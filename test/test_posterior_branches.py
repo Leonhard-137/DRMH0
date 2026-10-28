@@ -24,16 +24,33 @@ class PosteriorFeatureTests(unittest.TestCase):
         self.centers = np.array([[1.0, 3.0, 9.0], [4.0, 5.0, 7.0]])
         self.widths = np.array([[1.0, 1.0, 2.0], [2.0, 2.0, 2.0]])
         self.amplitudes = np.array([[3.0, 1.0, 2.0], [1.0, 3.0, 2.0]])
+        self.centroids = np.array([[3.0, 5.0, 13.0], [8.0, 9.0, 11.0]])
         self.features = posterior_features(
             self.centers,
             self.widths,
             self.amplitudes,
+            centroids=self.centroids,
         )
 
     def test_expected_derived_features(self):
         np.testing.assert_allclose(self.features["q0"], [1.0, 3.0, 4.5])
         np.testing.assert_allclose(self.features["amp_frac0"], [0.75, 0.25, 0.5])
         np.testing.assert_allclose(self.features["center_separation"], [3.0, 2.0, -2.0])
+        np.testing.assert_allclose(self.features["tau0"], [3.0, 5.0, 13.0])
+
+    def test_centroid_range_selects_nonnegative_component(self):
+        features = posterior_features(
+            self.centers,
+            self.widths,
+            self.amplitudes,
+            centroids=np.array([[-0.1, 0.0, 0.2], [1.0, 2.0, 3.0]]),
+        )
+        selected = branch_mask(
+            "tau0_nonnegative",
+            {"ranges": {"tau0": [0.0, None]}},
+            features,
+        )
+        np.testing.assert_array_equal(selected, [False, True, True])
 
     def test_adjacent_ranges_form_an_exact_partition(self):
         low = branch_mask(

@@ -1,0 +1,51 @@
+# U-only independent GP with no disk filtering.
+# W2 = 1 + alpha*D_W*I + noise_W
+# U  = 1 + alpha*(a*D_U+b*B)*I + A_S*S + noise_U
+# I: unit-variance DRW, tau=30 d. S independent of I, unit-variance smooth GP.
+# Reuse anchor illumination and measurement noise; draw S at U epochs only.
+# Each variable component is sample-demeaned. No realization RMS rescaling.
+experiment:
+  seed: 2026091901
+  output_dir: cases
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  # Anchor calibration metadata; the new case keeps fixed_alpha below.
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+
+paired_ablation:
+  # Inherit T1=5900 K, i=45 deg, z=.031, a=.787, b=.15,
+  # causal BLR Gamma(k=2), onset=6 d, theta=7 d, centroid=20 d.
+  anchor_config: experiment_one_shared_blr.yaml
+  anchor_case: cases_one_shared_blr/one_shared_initial_refined
+  conditional_seed: 2026091902
+  fixed_alpha: 0.15291719122700673
+  unfiltered_response_gp:
+    # C_S(h)=(1+abs(h)/tau)*exp(-abs(h)/tau).
+    tau_days: 55.3735295468
+    # Previous U coefficient alpha*h*sqrt(q), before disk smoothing.
+    amplitude: 0.15396862368414638
+  cases:
+    abl_disk_blr_uonly_gp_raw:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+
+mica_fit:
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.14195358, 152.84]
+  gamma_sigma_days: [0.20075267806341413, 216.14840087310387]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01

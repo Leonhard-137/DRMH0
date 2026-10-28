@@ -78,7 +78,16 @@ def parse_run_name(name: str):
 
 
 def model_label(model: str) -> str:
-    model = str(model).lower()
+    model = str(model).strip().lower()
+    if model.startswith("mix"):
+        codes = model[3:]
+        if not codes or any(code not in TF_CODES for code in codes):
+            raise ValueError(f"invalid mixed transfer-function label: {model!r}")
+        return f"mix{codes}"
+    if model.isdigit():
+        if any(code not in TF_CODES for code in model):
+            raise ValueError(f"invalid mmap transfer-function code: {model!r}")
+        return f"mix{model}"
     return TF_LABELS.get(model, model)
 
 
@@ -109,6 +118,71 @@ def tau_from_kind(center, width, kind: str):
     return center
 
 
+def center_from_kind(centroid, width, kind: str):
+    """Convert a transfer-function centroid back to its onset/shift parameter."""
+    if kind in {"gaussian", "tophat"}:
+        return centroid
+    if kind == "gamma":
+        return centroid - 2.0 * width
+    if kind == "exp":
+        return centroid - width
+    return centroid
+
+
+def component_location_name(names: list[str], index: int) -> str:
+    """Return the native lag-column name used by this MICA output.
+
+    Historical MICA outputs sampled ``component_center``.  Current MICA
+    samples and writes ``component_centroid``.  The distinct column names let
+    one reader preserve the physical meanings of both ``center`` and ``tau``.
+    """
+    candidates = [
+        f"{index}-th_component_centroid",
+        f"{index}-th_component_center",
+    ]
+    found = [name for name in candidates if name in names]
+    if len(found) != 1:
+        raise ValueError(
+            f"component {index} must have exactly one center/centroid column; "
+            f"found {found or 'none'}"
+        )
+    return found[0]
+
+
+def component_parameter_arrays(
+    sample: np.ndarray,
+    names: list[str],
+    ncomp: int,
+    model: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return physical center, width, amplitude, and centroid arrays."""
+    kinds = model_kinds(model, ncomp)
+    centers, widths, amplitudes, centroids = [], [], [], []
+    for index, kind in enumerate(kinds):
+        width = np.exp(sample[:, col(names, f"{index}-th_component_sigma")])
+        amplitude = np.exp(
+            sample[:, col(names, f"{index}-th_component_amplitude")]
+        )
+        location_name = component_location_name(names, index)
+        location = sample[:, col(names, location_name)]
+        if location_name.endswith("_centroid"):
+            centroid = location
+            center = center_from_kind(centroid, width, kind)
+        else:
+            center = location
+            centroid = tau_from_kind(center, width, kind)
+        centers.append(center)
+        widths.append(width)
+        amplitudes.append(amplitude)
+        centroids.append(centroid)
+    return tuple(np.vstack(values) for values in (
+        centers,
+        widths,
+        amplitudes,
+        centroids,
+    ))
+
+
 def reorder_component_columns(
     sample: np.ndarray,
     names: list[str],
@@ -135,26 +209,27 @@ def reorder_component_columns(
             "component_order=moment1 cannot exchange components with different "
             "transfer-function families"
         )
-    centers = [
-        sample[:, col(names, f"{index}-th_component_center")]
-        for index in range(2)
-    ]
-    widths = [
-        np.exp(sample[:, col(names, f"{index}-th_component_sigma")])
-        for index in range(2)
-    ]
-    moments = [
-        tau_from_kind(centers[index], widths[index], kinds[index])
-        for index in range(2)
-    ]
+    _, _, _, moments = component_parameter_arrays(sample, names, ncomp, model)
     swapped = np.asarray(moments[0] > moments[1], dtype=bool)
     if not np.any(swapped):
         return sample, swapped
 
     ordered = sample.copy()
-    for quantity in ("amplitude", "center", "sigma"):
-        left = col(names, f"0-th_component_{quantity}")
-        right = col(names, f"1-th_component_{quantity}")
+    column_pairs = [
+        (
+            col(names, "0-th_component_amplitude"),
+            col(names, "1-th_component_amplitude"),
+        ),
+        (
+            col(names, component_location_name(names, 0)),
+            col(names, component_location_name(names, 1)),
+        ),
+        (
+            col(names, "0-th_component_sigma"),
+            col(names, "1-th_component_sigma"),
+        ),
+    ]
+    for left, right in column_pairs:
         temporary = ordered[swapped, left].copy()
         ordered[swapped, left] = ordered[swapped, right]
         ordered[swapped, right] = temporary
@@ -190,11 +265,39 @@ def stage_config(cfg: dict, stage: str) -> dict:
     return fit
 
 
+def configured_stages(cfg: dict) -> list[str]:
+    """Return enabled MICA stages, preserving the order in the YAML file."""
+    raw = cfg.get("mica_stages")
+    if raw is None:
+        return ["mica_round1"]
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise ValueError("mica_stages must be a non-empty list")
+    stages = [str(value).strip() for value in raw]
+    if any(not value for value in stages) or len(stages) != len(set(stages)):
+        raise ValueError("mica_stages must contain unique, non-empty section names")
+    missing = [stage for stage in stages if not (cfg.get(stage) or {})]
+    if missing:
+        raise ValueError("mica_stages references missing sections: " + ", ".join(missing))
+    return stages
+
+
 def ncomp_from_config(fit: dict) -> int:
     if "ncomp" in fit:
-        return int(fit["ncomp"])
-    nc = fit.get("number_component", [2, 2])
-    return int(nc[0] if isinstance(nc, list) else nc)
+        ncomp = int(fit["ncomp"])
+    else:
+        nc = fit.get("number_component", [2, 2])
+        if isinstance(nc, (list, tuple)):
+            if len(nc) != 2 or int(nc[0]) != int(nc[1]):
+                raise ValueError("number_component must specify one fixed count [n, n]")
+            ncomp = int(nc[0])
+        else:
+            ncomp = int(nc)
+    model = model_label(fit.get("type_tf", "gaussian"))
+    if model.startswith("mix") and len(model[3:]) != ncomp:
+        raise ValueError(
+            f"{model} encodes {len(model[3:])} components, but config specifies {ncomp}"
+        )
+    return ncomp
 
 
 def mica_run_root(source_dir: Path, fit: dict) -> Path:
@@ -202,13 +305,57 @@ def mica_run_root(source_dir: Path, fit: dict) -> Path:
     output_root = Path(fit.get("output_root", "runs/mica")).expanduser()
     if not output_root.is_absolute():
         output_root = source_dir / output_root
-    return output_root / f"{ncomp}comp"
+    model = model_label(fit.get("type_tf", "gaussian"))
+    return output_root if model.startswith("mix") else output_root / f"{ncomp}comp"
 
 
 def mica_result_dir(source_dir: Path, fit: dict) -> Path:
     out = mica_run_root(source_dir, fit) / "result"
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def mica_analysis_dir(
+    source_dir: Path,
+    fit: dict,
+    component: str = "comp0",
+) -> Path:
+    """Return the model-local downstream directory for one native component."""
+    component = str(component).strip().lower()
+    if not re.fullmatch(r"comp\d+", component):
+        raise ValueError(f"invalid MICA component label: {component!r}")
+    return mica_run_root(source_dir, fit) / "result" / component
+
+
+def configured_run_name(fit: dict, response: str) -> str:
+    """Render the exact run directory name used by ``run_mica.py``."""
+    ncomp = ncomp_from_config(fit)
+    model = model_label(fit.get("type_tf", "gaussian"))
+    template = str(
+        fit.get(
+            "run_template",
+            "run_{driver}_to_{band}_{ncomp}comp_{type_tf}",
+        )
+    )
+    name = template.format(
+        driver=str(fit.get("driver", "")),
+        band=str(response),
+        response=str(response),
+        ncomp=ncomp,
+        type_tf=model,
+        model=model,
+        tf_label=model,
+    )
+    path = Path(name)
+    if (
+        not name.strip()
+        or name != name.strip()
+        or path.is_absolute()
+        or len(path.parts) != 1
+        or name in {".", ".."}
+    ):
+        raise ValueError(f"run_template rendered an unsafe directory name: {name!r}")
+    return name
 
 
 def run_dirs(source_dir: Path, fit: dict) -> list[Path]:
@@ -243,10 +390,7 @@ def run_dirs(source_dir: Path, fit: dict) -> list[Path]:
             + ", ".join(misplaced)
         )
 
-    expected = [
-        root / f"run_{driver}_to_{band}_{ncomp}comp_{model}"
-        for band in responses
-    ]
+    expected = [root / configured_run_name(fit, band) for band in responses]
     missing = [path for path in expected if not path.is_dir()]
     if missing:
         raise FileNotFoundError(
@@ -291,8 +435,8 @@ def mica_flux_scales(run_dir: Path) -> tuple[float, float, str]:
 
 def role(k: int, ncomp: int) -> str:
     if ncomp == 2:
-        return "disk" if k == 0 else "delayed"
-    return "disk" if k == 0 else f"comp{k}"
+        return "short" if k == 0 else "delayed"
+    return "short" if k == 0 else f"comp{k}"
 
 
 def summarize_run(
@@ -321,6 +465,9 @@ def summarize_run(
     sample, label_swapped = reorder_component_columns(
         sample, names, ncomp, model, fit
     )
+    centers_matrix, widths_matrix, amplitudes_matrix, centroids_matrix = (
+        component_parameter_arrays(sample, names, ncomp, model)
+    )
     driver_scale, response_scale, normalization_mode = mica_flux_scales(run_dir)
     scale_ratio = response_scale / driver_scale
     wave = float(cfg["bands"][band])
@@ -331,19 +478,12 @@ def summarize_run(
     selection = "all"
     keep = np.ones(len(sample), dtype=bool)
     if branch_definition is not None:
-        raw_centers = np.vstack([
-            sample[:, col(names, f"{k}-th_component_center")]
-            for k in range(ncomp)
-        ])
-        raw_widths = np.vstack([
-            np.exp(sample[:, col(names, f"{k}-th_component_sigma")])
-            for k in range(ncomp)
-        ])
-        raw_amplitudes = np.vstack([
-            np.exp(sample[:, col(names, f"{k}-th_component_amplitude")])
-            for k in range(ncomp)
-        ])
-        features = posterior_features(raw_centers, raw_widths, raw_amplitudes)
+        features = posterior_features(
+            centers_matrix,
+            widths_matrix,
+            amplitudes_matrix,
+            centroids=centroids_matrix,
+        )
         keep = branch_mask(str(branch_id), branch_definition, features)
         retained_weight = float(np.sum(weights[keep]))
         if retained_weight <= 0.0:
@@ -359,9 +499,7 @@ def summarize_run(
         if model != "gaussian":
             raise ValueError("posterior_q_max is only defined for Gaussian runs")
         q_max = float(q_max)
-        tf0_center = sample[:, col(names, "0-th_component_center")]
-        tf0_width = np.exp(sample[:, col(names, "0-th_component_sigma")])
-        q = tf0_center / tf0_width
+        q = centers_matrix[0] / widths_matrix[0]
         keep = np.isfinite(q) & (q < q_max)
         retained_weight = float(np.sum(weights[keep]))
         if retained_weight <= 0.0:
@@ -371,6 +509,11 @@ def summarize_run(
         label_swapped = label_swapped[keep]
         weights = normalized_weights(weights[keep])
         selection = f"q0<{q_max:g}"
+
+    centers_matrix = centers_matrix[:, keep]
+    widths_matrix = widths_matrix[:, keep]
+    amplitudes_matrix = amplitudes_matrix[:, keep]
+    centroids_matrix = centroids_matrix[:, keep]
 
     conditional_ess = effective_sample_size(weights)
     label_order = str(fit.get("component_order", "native"))
@@ -394,15 +537,10 @@ def summarize_run(
         "response_to_driver_scale": scale_ratio,
     }
 
-    amps, centers, taus, widths = [], [], [], []
-    for k in range(ncomp):
-        amp = np.exp(sample[:, col(names, f"{k}-th_component_amplitude")])
-        center = sample[:, col(names, f"{k}-th_component_center")]
-        width = np.exp(sample[:, col(names, f"{k}-th_component_sigma")])
-        amps.append(amp)
-        centers.append(center)
-        widths.append(width)
-        taus.append(tau_from_kind(center, width, kinds[k]))
+    amps = [amplitudes_matrix[k] for k in range(ncomp)]
+    centers = [centers_matrix[k] for k in range(ncomp)]
+    widths = [widths_matrix[k] for k in range(ncomp)]
+    taus = [centroids_matrix[k] for k in range(ncomp)]
 
     amp_sum = np.sum(np.vstack(amps), axis=0)
     gains = [amp * scale_ratio for amp in amps]
@@ -415,6 +553,7 @@ def summarize_run(
             "lambda_obs": wave,
             "component": f"tf{k}",
             "role": role(k, ncomp),
+            "tf_kind": kinds[k],
         }
         add_q(row, "tau", taus[k], weights)
         add_q(row, "width", widths[k], weights)
@@ -430,6 +569,7 @@ def summarize_run(
         "lambda_obs": wave,
         "component": "total",
         "role": "total",
+        "tf_kind": "mixture" if ncomp > 1 else kinds[0],
     }
     add_q(row, "tau", total_tau, weights)
     row.update({"width": np.nan, "width_err_low": np.nan, "width_err_high": np.nan})
@@ -447,6 +587,7 @@ def summarize_run(
             "band": band,
             "lambda_obs": wave,
             "sample": int(sample_ids[i]),
+            "tf_kind": kinds[0],
             "center": float(tf0_center[i]),
             "width": float(tf0_width[i]),
             "tau": float(tf0_tau[i]),
@@ -468,6 +609,7 @@ def summarize_run(
                 "sample": int(sample_ids[i]),
                 "component": f"tf{k}",
                 "role": role(k, ncomp),
+                "tf_kind": kinds[k],
                 "center": float(centers[k][i]),
                 "width": float(widths[k][i]),
                 "tau": float(taus[k][i]),
@@ -479,8 +621,15 @@ def summarize_run(
             for i in range(len(sample))
         ])
 
-    priors = read_applied_priors(data / "table_priors_applied.csv", band)
+    priors = read_applied_priors(
+        data / "table_priors_applied.csv",
+        band,
+        native_path=data / f"para_names_line.txt_{ncomp}",
+    )
     for prior in priors:
+        match = re.fullmatch(r"tf(\d+)", str(prior["component"]))
+        if match:
+            prior["tf_kind"] = kinds[int(match.group(1))]
         prior.update({key: metadata[key] for key in ("run_name", "driver_band", "model", "ncomp")})
     selection_row = {
         **metadata,
@@ -497,18 +646,64 @@ def summarize_run(
     return rows, priors, posterior, component_posterior, selection_row
 
 
-def read_applied_priors(path: Path, band: str) -> list[dict]:
+def read_applied_priors(
+    path: Path,
+    band: str,
+    *,
+    native_path: Path | None = None,
+) -> list[dict]:
     if not path.exists():
-        return []
+        if native_path is None or not native_path.exists():
+            return []
+        out = []
+        for line in native_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines():
+            fields = line.split()
+            if len(fields) < 5 or not fields[0].isdigit():
+                continue
+            name = fields[1]
+            match = re.fullmatch(
+                r"(\d+)-th_component_(amplitude|center|centroid|sigma)",
+                name,
+            )
+            if not match:
+                continue
+            index, raw = int(match.group(1)), match.group(2)
+            low, high = float(fields[3]), float(fields[4])
+            quantity = {
+                "amplitude": "amp",
+                "center": "center",
+                "centroid": "tau",
+                "sigma": "width",
+            }[raw]
+            if quantity in {"amp", "width"}:
+                low, high = np.exp(low), np.exp(high)
+            out.append({
+                "band": band,
+                "component": f"tf{index}",
+                "quantity": quantity,
+                "prior_low": low,
+                "prior_high": high,
+            })
+        return out
     out = []
     df = pd.read_csv(path)
     for r in df.itertuples(index=False):
         name = str(r.param_name)
-        m = re.match(r"(\d+)-th_component_(amplitude|center|sigma)$", name)
+        m = re.match(
+            r"(\d+)-th_component_(amplitude|center|centroid|sigma)$",
+            name,
+        )
         if not m:
             continue
         k, raw = int(m.group(1)), m.group(2)
-        quantity = {"amplitude": "amp", "center": "tau", "sigma": "width"}[raw]
+        quantity = {
+            "amplitude": "amp",
+            "center": "center",
+            "centroid": "tau",
+            "sigma": "width",
+        }[raw]
         lo, hi = float(r.prior_min), float(r.prior_max)
         if quantity in {"amp", "width"}:
             lo, hi = np.exp(lo), np.exp(hi)
@@ -518,7 +713,8 @@ def read_applied_priors(path: Path, band: str) -> list[dict]:
 
 COMPONENT_SUMMARY_COLUMNS = [
     "run_name", "driver_band", "band", "model", "ncomp",
-    "selection", "retained_weight", "lambda_obs", "component", "role",
+    "selection", "retained_weight", "conditional_ess", "lambda_obs",
+    "component", "role", "tf_kind",
     "normalization_mode", "driver_scale", "response_scale",
     "response_to_driver_scale",
     "tau", "tau_err_low", "tau_err_high",
@@ -529,17 +725,17 @@ COMPONENT_SUMMARY_COLUMNS = [
 ]
 TF0_POSTERIOR_COLUMNS = [
     "run_name", "driver_band", "band", "model", "ncomp",
-    "selection", "retained_weight", "lambda_obs", "sample",
+    "selection", "retained_weight", "conditional_ess", "lambda_obs", "sample",
     "normalization_mode", "driver_scale", "response_scale",
     "response_to_driver_scale",
-    "center", "width", "tau", "amp", "gain", "weight",
+    "tf_kind", "center", "width", "tau", "amp", "gain", "weight",
 ]
 COMPONENT_POSTERIOR_COLUMNS = [
     "run_name", "driver_band", "band", "model", "ncomp",
-    "selection", "retained_weight", "lambda_obs", "sample",
+    "selection", "retained_weight", "conditional_ess", "lambda_obs", "sample",
     "normalization_mode", "driver_scale", "response_scale",
     "response_to_driver_scale",
-    "component", "role", "center", "width", "tau", "amp", "gain",
+    "component", "role", "tf_kind", "center", "width", "tau", "amp", "gain",
     "amp_frac", "weight",
 ]
 
@@ -599,10 +795,80 @@ def selection_status(parent_mass: float, ess: float, config: dict) -> str:
     return "+".join(flags) if flags else "ok"
 
 
+def collect_branch(
+    out_dir: Path,
+    runs: list[Path],
+    cfg: dict,
+    fit: dict,
+    branch_id: str,
+    definition: dict,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Collect one conditional branch without rewriting the full-posterior products."""
+    branch_comp_rows, branch_post_rows, branch_component_rows = [], [], []
+    branch_selection_rows = []
+    for rd in runs:
+        comp, _, post, component_post, selected = summarize_run(
+            rd,
+            cfg,
+            fit,
+            branch_id=branch_id,
+            branch_definition=definition,
+        )
+        branch_comp_rows.extend(comp)
+        branch_post_rows.extend(post)
+        branch_component_rows.extend(component_post)
+        branch_selection_rows.append(selected)
+
+    branch_dir = out_dir / branch_result_relative_dir(fit, branch_id)
+    _, branch_posterior, _ = save_collection(
+        branch_dir,
+        branch_comp_rows,
+        branch_post_rows,
+        branch_component_rows,
+    )
+    config = branch_config(fit)
+    summary_rows = []
+    for row in branch_selection_rows:
+        parent_mass = float(row["retained_weight"])
+        ess = float(row["conditional_ess"])
+        summary_rows.append({
+            "branch_id": branch_id,
+            "label": definition["label"],
+            "band": row["band"],
+            "lambda_obs_A": row["lambda_obs"],
+            "parent_posterior_mass": parent_mass,
+            "n_raw": int(row["n_raw"]),
+            "n_selected": int(row["n_selected"]),
+            "conditional_ess": ess,
+            "label_order": row["label_order"],
+            "label_swap_fraction": row["label_swap_fraction"],
+            "label_swap_mass": row["label_swap_mass"],
+            "status": selection_status(parent_mass, ess, config),
+        })
+    branch_summary = pd.DataFrame(summary_rows).sort_values("lambda_obs_A")
+    branch_summary.to_csv(branch_dir / "branch_summary.csv", index=False)
+    with (branch_dir / "branch_definition.yaml").open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            {
+                "branch_id": branch_id,
+                "label": definition["label"],
+                "ranges": definition["ranges"],
+            },
+            handle,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    return branch_summary, branch_posterior
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Collect compact MICA component and prior tables.")
     ap.add_argument("source_dir", type=Path)
     ap.add_argument("stage", nargs="?", default="r1", help="r1, r2, or a config section name")
+    ap.add_argument(
+        "--branch",
+        help="collect one configured posterior branch without rewriting full-posterior products",
+    )
     args = ap.parse_args()
 
     source_dir = args.source_dir.expanduser().resolve()
@@ -611,6 +877,29 @@ def main() -> None:
     out_dir = mica_result_dir(source_dir, fit)
 
     runs = run_dirs(source_dir, fit)
+    definitions = branch_definitions(fit)
+    if args.branch:
+        if args.branch not in definitions:
+            available = ", ".join(definitions) if definitions else "none"
+            raise ValueError(
+                f"unknown or disabled posterior branch {args.branch!r}; "
+                f"available: {available}"
+            )
+        branch_summary, _ = collect_branch(
+            out_dir,
+            runs,
+            cfg,
+            fit,
+            args.branch,
+            definitions[args.branch],
+        )
+        branch_dir = out_dir / branch_result_relative_dir(fit, args.branch)
+        print(branch_dir / "mica_component_summary.csv")
+        print(branch_dir / "mica_tf0_posterior.txt")
+        print(branch_dir / "mica_component_posterior.txt")
+        print(branch_dir / "branch_summary.csv")
+        return
+
     comp_rows, prior_rows, posterior_rows, component_posterior_rows, selection_rows = [], [], [], [], []
     for rd in runs:
         comp, pri, post, component_post, selection = summarize_run(rd, cfg, fit)
@@ -624,7 +913,7 @@ def main() -> None:
 
     prior_cols = [
         "run_name", "driver_band", "band", "model", "ncomp",
-        "component", "quantity", "prior_low", "prior_high",
+        "component", "tf_kind", "quantity", "prior_low", "prior_high",
     ]
     pri = pd.DataFrame(prior_rows, columns=prior_cols)
     if len(pri):
@@ -635,7 +924,8 @@ def main() -> None:
     legacy_selection_columns = [
         "run_name", "driver_band", "model", "ncomp", "selection",
         "retained_weight", "band", "lambda_obs", "n_raw", "n_selected",
-        "posterior_q_max", "label_order", "label_swap_fraction", "label_swap_mass",
+        "posterior_q_max", "conditional_ess", "label_order",
+        "label_swap_fraction", "label_swap_mass",
     ]
     selection = pd.DataFrame(selection_rows)[legacy_selection_columns].sort_values("lambda_obs")
     selection.to_csv(out_dir / "mica_posterior_selection.csv", index=False)
@@ -661,7 +951,6 @@ def main() -> None:
         float_format="%.10e",
     )
 
-    definitions = branch_definitions(fit)
     if definitions:
         branches_root = out_dir / "branches"
         branches_root.mkdir(parents=True, exist_ok=True)
@@ -670,62 +959,16 @@ def main() -> None:
         branch_tf0: dict[str, pd.DataFrame] = {}
 
         for branch_id, definition in definitions.items():
-            branch_comp_rows, branch_post_rows, branch_component_rows = [], [], []
-            branch_selection_rows = []
-            for rd in runs:
-                comp, _, post, component_post, selected = summarize_run(
-                    rd,
-                    cfg,
-                    fit,
-                    branch_id=branch_id,
-                    branch_definition=definition,
-                )
-                branch_comp_rows.extend(comp)
-                branch_post_rows.extend(post)
-                branch_component_rows.extend(component_post)
-                branch_selection_rows.append(selected)
-
-            branch_dir = out_dir / branch_result_relative_dir(fit, branch_id)
-            _, branch_posterior, _ = save_collection(
-                branch_dir,
-                branch_comp_rows,
-                branch_post_rows,
-                branch_component_rows,
+            branch_summary, branch_posterior = collect_branch(
+                out_dir,
+                runs,
+                cfg,
+                fit,
+                branch_id,
+                definition,
             )
             branch_tf0[branch_id] = branch_posterior
-
-            summary_rows = []
-            for row in branch_selection_rows:
-                parent_mass = float(row["retained_weight"])
-                ess = float(row["conditional_ess"])
-                summary_rows.append({
-                    "branch_id": branch_id,
-                    "label": definition["label"],
-                    "band": row["band"],
-                    "lambda_obs_A": row["lambda_obs"],
-                    "parent_posterior_mass": parent_mass,
-                    "n_raw": int(row["n_raw"]),
-                    "n_selected": int(row["n_selected"]),
-                    "conditional_ess": ess,
-                    "label_order": row["label_order"],
-                    "label_swap_fraction": row["label_swap_fraction"],
-                    "label_swap_mass": row["label_swap_mass"],
-                    "status": selection_status(parent_mass, ess, config),
-                })
-            branch_summary = pd.DataFrame(summary_rows).sort_values("lambda_obs_A")
-            branch_summary.to_csv(branch_dir / "branch_summary.csv", index=False)
             branch_summaries[branch_id] = branch_summary
-            with (branch_dir / "branch_definition.yaml").open("w", encoding="utf-8") as handle:
-                yaml.safe_dump(
-                    {
-                        "branch_id": branch_id,
-                        "label": definition["label"],
-                        "ranges": definition["ranges"],
-                    },
-                    handle,
-                    sort_keys=False,
-                    allow_unicode=True,
-                )
 
         catalog_rows = []
         for branch_id, summary in branch_summaries.items():

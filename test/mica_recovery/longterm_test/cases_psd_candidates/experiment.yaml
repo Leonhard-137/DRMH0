@@ -1,0 +1,178 @@
+# Inference-only import of saved selected PSD realizations.
+experiment:
+  output_dir: .
+  simulation_source: LTSIM
+observations:
+  input_dir: /home/leonhard/sci001/test/mica_smooth/data/original
+  input_source: Mrk817_a
+  driver_band: UVW2
+  response_band: U
+  time_zero: original_MJD
+  flux_units: original observed band flux units
+  amplitude_calibration: saved fractional realization times fixed observed sample
+    mean
+  noise: saved realization with original observed errors
+paired_ablation:
+  cases:
+    C045_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C045_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C045_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C045_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C045_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C001_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C001_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C001_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C001_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C001_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C078_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C078_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C078_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C078_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C078_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C075_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C075_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C075_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C075_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C075_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C089_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C089_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C089_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C089_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C089_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C069_raw:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C069_all_s5:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C069_all_s10:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C069_all_s20:
+      blr: true
+      shared_driver: true
+      shared_response: true
+    C069_all_s40:
+      blr: true
+      shared_driver: true
+      shared_response: true
+mica_fit:
+  centroid_lag_days:
+  - 0.0
+  - 100.0
+  sigma_days:
+  - 0.14195358
+  - 152.84
+  gamma_sigma_days:
+  - 0.20075267806341413
+  - 216.14840087310387
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01
+generation:
+  inference_only: true
+  manifest: /home/leonhard/sci001/test/mica_recovery/longterm_test/cases_psd_candidates/manifest.json
+  preparation_script: /home/leonhard/sci001/test/mica_recovery/longterm_test/prepare_psd_candidate_recovery.py
+  source_summary: /home/leonhard/sci001/test/mica_recovery/longterm_test/psd_match_817/local_peak_check/summary.json
+  no_new_random_draw: true
+  no_rms_rescaling: true
+detrending:
+  bands:
+  - UVW2
+  - U
+  sigma_days:
+  - 5
+  - 10
+  - 20
+  - 40
+  error_mode: original
+  inference_only: true
+  formula: F_raw - normalized Gaussian trend(F_raw) + mean(F_raw)
+execution:
+  max_parallel_fits: 8
+  mpi_per_fit: 2
+  model_order:
+  - gamma
+  - gaussian
+  serial_postfit_figures: true

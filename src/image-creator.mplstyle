@@ -1,0 +1,63 @@
+# Portable copy of the user's image-creator base style (2026-09-22).
+# Plot-specific corner semantics are implemented in plot_mica_corner.py.
+font.family: serif
+font.serif: STIXGeneral, DejaVu Serif
+mathtext.fontset: stix
+font.size: 10.5
+figure.figsize: 6.8, 4.4
+figure.dpi: 120
+figure.facecolor: white
+figure.edgecolor: white
+axes.facecolor: white
+axes.edgecolor: 222222
+axes.linewidth: 0.9
+axes.labelsize: 11.5
+axes.labelpad: 4.0
+axes.titlesize: 11.5
+axes.titlepad: 6.0
+axes.grid: False
+axes.spines.left: True
+axes.spines.right: True
+axes.spines.bottom: True
+axes.spines.top: True
+axes.prop_cycle: cycler('color', ['1F4E9E', 'C43C39', 'E69F00', '009E73', '7A5195', '56B4E9'])
+lines.linewidth: 1.45
+lines.linestyle: -
+lines.markersize: 4.2
+lines.markeredgewidth: 0.8
+patch.edgecolor: 222222
+patch.linewidth: 0.8
+xtick.direction: in
+ytick.direction: in
+xtick.top: True
+ytick.right: True
+xtick.minor.visible: True
+ytick.minor.visible: True
+xtick.minor.ndivs: 4
+ytick.minor.ndivs: 4
+xtick.labelsize: 9.5
+ytick.labelsize: 9.5
+xtick.major.size: 4.5
+ytick.major.size: 4.5
+xtick.minor.size: 2.6
+ytick.minor.size: 2.6
+xtick.major.width: 0.9
+ytick.major.width: 0.9
+xtick.minor.width: 0.7
+ytick.minor.width: 0.7
+legend.frameon: False
+legend.fontsize: 9.0
+legend.handlelength: 2.1
+legend.handletextpad: 0.5
+legend.borderaxespad: 0.4
+legend.labelspacing: 0.35
+errorbar.capsize: 0.0
+image.cmap: viridis
+savefig.dpi: 300
+savefig.facecolor: white
+savefig.edgecolor: white
+savefig.bbox: tight
+savefig.pad_inches: 0.03
+pdf.fonttype: 42
+ps.fonttype: 42
+svg.fonttype: none

@@ -77,7 +77,12 @@ def branch_result_relative_dir(fit: Mapping, branch_id: str) -> Path:
     return path
 
 
-def posterior_features(centers, widths, amplitudes) -> dict[str, np.ndarray]:
+def posterior_features(
+    centers,
+    widths,
+    amplitudes,
+    centroids=None,
+) -> dict[str, np.ndarray]:
     """Build named scalar features used by branch range selections."""
     centers = np.asarray(centers, float)
     widths = np.asarray(widths, float)
@@ -86,6 +91,10 @@ def posterior_features(centers, widths, amplitudes) -> dict[str, np.ndarray]:
         raise ValueError("centers, widths, and amplitudes must have matching (ncomp, nsample) shapes")
     if centers.shape[0] < 1:
         raise ValueError("at least one transfer-function component is required")
+    if centroids is not None:
+        centroids = np.asarray(centroids, float)
+        if centroids.shape != centers.shape:
+            raise ValueError("centroids must match the component-array shape")
 
     amp_sum = np.sum(amplitudes, axis=0)
     features: dict[str, np.ndarray] = {}
@@ -96,6 +105,8 @@ def posterior_features(centers, widths, amplitudes) -> dict[str, np.ndarray]:
             features[f"amp{index}"] = amplitudes[index]
             features[f"amp_frac{index}"] = amplitudes[index] / amp_sum
             features[f"q{index}"] = centers[index] / widths[index]
+            if centroids is not None:
+                features[f"tau{index}"] = centroids[index]
 
     if centers.shape[0] >= 2:
         separation = centers[1] - centers[0]

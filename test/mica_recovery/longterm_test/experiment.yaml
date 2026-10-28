@@ -1,0 +1,83 @@
+experiment:
+  seed: 2026091401
+  output_dir: cases
+  simulation_source: LTSIM
+
+observations:
+  # Resolved relative to this YAML file.
+  input_dir: ../../../Mrk817_a/fflux/host_sub
+  input_source: Mrk817_a
+  driver_band: UVW2
+  response_band: U
+  # Output times are observer-frame days from the first of the two curves.
+  time_zero: common_first_epoch
+  # Match the noiseless synthetic UVW2 RMS to the observed intrinsic RMS.
+  amplitude_calibration: observed_driver_intrinsic_fractional_rms
+  noise: observed_per_epoch_fractional_errors
+
+grid:
+  dt_days: 0.02
+  lag_min_days: -10.0
+  lag_max_days: 100.0
+  disk_bin_oversample: 10
+  hidden_padding_tau: 5.0
+
+drw:
+  tau_days: [40.0, 4000.0]
+
+disk:
+  t1_kelvin: 9041.03
+  inclination_deg: 45.0
+  redshift: 0.031
+  wavelength_observed_angstrom:
+    UVW2: 1928.0
+    U: 3465.0
+
+response:
+  disk_fraction: 0.8
+  gaussian_fraction: 0.2
+  gaussian_cases:
+    separated:
+      mean_days: 30.0
+      sigma_days: 5.0
+    blended:
+      mean_days: 1.0
+      sigma_days: 0.75
+
+# Additional suite: Y = W2_noiseless * disk_U + independent OU + noise.
+# The U Starkey kernel is the injected W2-to-U test kernel in this suite.
+# Shared disk/grid/sampling/noise settings above still apply. No Gaussian.
+independent_response:
+  driver_tau_days: 40.0
+  rms_ratio: 0.3
+  cases:
+    disk_only:
+      tau_days: null
+    disk_plus_ind_tau005d:
+      tau_days: 5.0
+    disk_plus_ind_tau050d:
+      tau_days: 50.0
+
+# Paired with independent_response's clean disk/noise realization.
+# W = W0 + aW*s(t); U = disk_U*W0 + aU*s(t-lag); s is independent of D.
+# Timescales/delays are observer-frame days, not a physical total W-to-U kernel.
+# Amplitudes refer to each band's existing mean-normalized flux units.
+shared_slow:
+  tau_days: 100.0
+  driver_rms_ratio: 0.3
+  response_amplitude_ratio: 2.0
+  cases:
+    disk_shared_tau100d_lag200d:
+      lag_days: 200.0
+
+# Inference settings, separate from injection truth. Observer-frame days.
+# Both components have the same centroid/physical-standard-deviation priors;
+# no component is preassigned to the disk or slow signal.
+mica_fit:
+  centroid_lag_days: [-100.0, 300.0]
+  sigma_days: [0.05, 100.0]
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.1

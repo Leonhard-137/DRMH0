@@ -1,0 +1,93 @@
+"""Write the numerical research handoff from saved, inspected results."""
+from pathlib import Path
+import json, numpy as np
+ROOT=Path(__file__).resolve().parent
+OUT=ROOT/"outputs"
+
+
+def main():
+    rows=json.loads((OUT/"metrics.json").read_text())
+    metrics={r["name"]:r for r in rows}
+    base=metrics["local_nt250_xi10"]
+    cfg=json.loads((OUT/"config.json").read_text())
+    sens=json.loads((OUT/"sensitivity.json").read_text())
+    z=np.load(OUT/"fits.npz",allow_pickle=False)
+    q=z["q_local_nt250_xi10"];q_ex=z["q_local_without_Uu"]
+    central=(z["u"][:,None]>10)&(z["u"][:,None]<500)&(z["local_tp_250"][None,:]>6706)&(z["local_tp_250"][None,:]<6830)
+    corr=float(np.corrcoef(q[central],q_ex[central])[0,1])
+    lines=["# NGC 5548 温度映射复现结果", "",
+        "本次完成的是 **NK22 方法级复现及论文对照**，不是原作者未公开配置的逐点精确复现。主结果使用用户本地 STORM 1 数据；具有混合时间系统问题的公开 TempMap 包只作诊断。",
+        "", "## 数据是否足够", "",
+        "足够运行多波段反演。主输入为 19 个 UV/光学波段、4,203 个测量点：HST 684 点，Swift 1,571 点，地面 1,948 点。HX/SX 为计数率且不属于此薄盘 UV/光学模型，未纳入。",
+        f"统一后的观测系 HJD−2450000 为 {z['local_t'].min():.5f}–{z['local_t'].max():.5f}，总跨度约 {np.ptp(z['local_t']):.2f} 天。不同波段不同时间采样，不能理解为 4,203 个同时测齐19波段的历元。Swift 主体仅覆盖约6706–6830天；两端主要由地面数据约束。",
+        "", "19波段不等于直接测出了50个独立半径。基准有12,500个温度格点与19个零点，少于未知数的数据加上强重叠的径向响应核，使该问题仍依赖正则化。看见条纹不等于唯一恢复真实盘温度或证明传播波。",
+        "", "## 固定模型与处理", "",
+        r"固定 $M=10^{7.505}M_\odot$、$D_L=75$ Mpc、$z=0.017$、$L/L_{\rm Edd}=0.1$、$\eta=0.1$、$i=30^\circ$、$R_{\rm in}=6GM/c^2$；不为追逐原文数值重新调参。",
+        r"温度剖面 $T_0(u)\propto u^{-3/4}(1-u^{-1/2})^{1/4}$，$u=R/R_{\rm in}\in[1,1000]$，50个对数径向单元。$q=\delta T/T_0$。同817的前向核，包括黑体一阶响应、倾斜环光行时平滑和观测/静止系转换。时间维分别取50/100/250/500。",
+        r"求解 $\min_{q,b}\|(F-Aq-Bb)/\sigma\|^2+\xi q^TPq$。$b$为每波段常数；$P$包括扰动幅度、NK22温度加权径向差分、时间差分。没有额外的逐波段振幅再拟合。",
+        "保留原始总流量，单位10^-15 erg s^-1 cm^-2 Angstrom^-1；未额外去宿主或消光。常数宿主可由波段零点吸收，但变动的BLR贡献不能。误差按NK22相邻三点线性拟合检验，对非负附加标准差取**均值**并加到误差平方；不是2024 Mrk817的中位数版本。",
+        "本地MJD_UTC按地心位置与内置星历统一转HJD_UTC；反向恢复HST和地面公开时刻达到约0.001秒一致度。这并不额外证明原始观测的UTC/TDB与站址定义。波长采用标准Swift值及Fausnaugh地面有效波长，与公开包一致；NK22文字中的U/u/z数值不同，另做明确的三波段波长敏感性检验。",
+        "", "## 和原论文的数值对照", "",
+        r"下表固定 $N_t=250$。$\chi^2/N_d$ 是每数据点的卡方，不是除以自由度后的约化卡方。scale为全图$|\delta T/T|$的99百分位，不是RMS、最大值或误差。",
+        "", "| ξ | 本次 χ²/N | NK22 χ²/N | 本次 scale | NK22 scale |", "|---:|---:|---:|---:|---:|"]
+    for xi in [1,10,30,50,100,1000]:
+        r=metrics[f"local_nt250_xi{xi}"]
+        lines.append(f"| {xi} | {r['chi2_per_point']:.3f} | {r['paper_chi2_per_point']:.2f} | {r['scale99']:.3f} | {r['paper_scale99']:.2f} |")
+    lines += ["",f"基准ξ=10的卡方比论文高{100*(base['chi2_per_point']/1.29-1):.1f}%，scale高{100*(base['scale99']/.14-1):.1f}%。图中可见相近的红蓝交替径向结构；增大ξ抑制径向细节、图像更趋向纵向结构，增加Nt改善拟合。这复现了定性行为，但不能写成所有条纹位置、传播速度与原文一一一致。",
+        "低ξ解的部分扰动明显超出线性小扰动范围；其较低卡方不能直接解释为物理模型更好。",
+        "本次未计算逐温度像素的后验可信区间，也未传播黑洞质量、距离、倾角等外部参数的不确定性；不能把色阶幅度当成显著性。",
+        f"基准全图约{100*np.mean(abs(q)>.2):.3f}%的格点有|q|>0.2，最大|q|={np.max(abs(q)):.3f}。99百分位小于0.2并不表示所有格点都在线性安全区。",
+        "", "完整18组本地网格/ξ对照见 `outputs/paper_comparison.csv`；另18组公开混合包诊断只保存在 `outputs/metrics.json` 和 `fits.npz`，不用于主物理结论。",
+        "", "## U/u 与污染问题", "",
+        f"同一50×250网格、ξ=10下剔除Swift U与地面u后，全图与基准的Pearson相关系数为{base['without_Uu_map_pearson_all']:.3f}；另外，在10<R/Rin<500、6706<t<6830的中心窗口内为{corr:.3f}。这些是描述性相关，不是显著性检验或独立像素统计。图07使用共同色标显示两图及差图，变化不可忽略。",
+        f"剔除后剩余波段的χ²/N={base['without_Uu_chi2_per_point']:.3f}。由于数据集合改变，不把这个较小的数当作同一似然上的模型优劣证据。",
+        "这意味着有些结构在去掉U/u后仍存在，但其形态/幅度受这两个波段影响；既不能说条纹全来自BLR，也不能说BLR不重要。其余波段同样可能含有弥散连续谱/发射线。该剔除测试不是MICA分解，更不是纯盘信号证明。未改动任何MICA先验或配置。",
+        "", "## 约定与误差敏感性", "",
+        "| 测试（固定ξ=10） | χ²/N | scale | 与基准全图相关 |", "|---|---:|---:|---:|"]
+    for s in sens:
+        lines.append(f"| {s['name']} | {s['chi2_per_point']:.3f} | {s['scale99']:.3f} | {s['pearson_full_map']:.4f} |")
+    lines += ["", "第一行仅将U/u/z替换成NK22文字明确出现的3494/3590/8897 Å，并非已知的完整原作者波长表；第二行同时改变流量和误差，测试公开教程额外一个(1+z)的约定；第三行完全不用triplet修正。误差处理的影响比1.7%的红移约定明显，不能凭卡方接近1就推断模型正确。",
+        "", "## U残差的条件时延拟合（2024图16）", ""]
+    lagpath=OUT/"lag_baseline_summary.json"
+    if lagpath.exists():
+        lag=json.loads(lagpath.read_text());p=lag["parameters"]
+        samples=np.load(OUT/"lag_baseline_results.npz",allow_pickle=False)["baseline_samples"]
+        interval=np.quantile(samples[:,2],[.025,.975])
+        for name,label in [("lag_days","观测系时延 / 天"),("scale","残差响应比例")]:
+            v=p[name];lines.append(f"- {label}：{v['median']:.4f} (-{v['minus']:.4f}, +{v['plus']:.4f})，后验16/50/84百分位。")
+        lines += [f"- 链：24 walkers，burn={lag['burn_iterations']}，保留{lag['iterations_after_burn']}步；50τ启发式判据：{lag['converged_50tau']}；实际耗时{lag['runtime_seconds']/60:.2f}分钟。",
+            "- 该判据不证明所有后验模态已探索，也不是独立多链收敛检验；保存了自相关时间、ensemble ESS和带警告的split-walker诊断。",
+            "- 原文基准：时延0.11 (-0.17,+0.36)天，比例0.22±0.02。"]
+        lines += [f"- 本次时延的95%等尾区间为[{interval[0]:.3f}, {interval[1]:.3f}]天，包含零；68%区间略不包含零，不应混用这两种表述。",
+            "短时延趋势与原文相近，但响应比例明显更低，未完成其数值的精确复现。数据版本、时间口径、误差处理、核波长及未公开先验均有差异；当前结果不足以归因于任何单独一项。"]
+    else:
+        lines.append("温度映射已完成；此处条件时延采样尚未完成，不能报告已收敛的后验结果。")
+    lines += ["", "使用现有官方JAVELIN协方差、DRW与top-hat响应，以及显式边界的平坦先验/对数DRW先验；采样用emcee。这里只是沿用原论文检验思路，先验与原作者未公开配置不保证一致。",
+        "**关键限制：**残差r=(I−H)F由同一批数据估计，Cov(r)并不等于输入测量误差的对角矩阵，且r与驱动F共享噪声。这里的条件拟合沿用简单观测误差，未传播H或温度图的不确定性。因此即便得到接近0天，也不能据此排除BLR；区间不能用作完整物理推断。",
+        "", "## 数据来源检查", "",
+        "用户本地数据的Swift为Edelson2019统一重处理版本，不是已证明与NK22完全相同的输入。公开TempMap的5900点包含本地1571个Swift点，另1712个未逐曝光验证的点；对照者不能假定这些新增点均独立。匹配的Swift时刻保留MJD，而HST/地面时刻为HJD−2400000，存在约0.50天相对偏移。公开包流量还带有统一1.00130680972因子，误差也不等同于本地误差加一个正下限。因此公开包被明确降级为诊断输入，没有替代本地原始数据。",
+        "相关逐行核对见 `audit_sources.py` 与 `outputs/source_quality.json`。未证明的事项包括：新增Swift记录的逐曝光身份、原作者最终时间选择、完整波长表及预处理数值。原文图的可见横轴边界没有被当作任意删数据规则。",
+        "", "## 数值验证与计算成本", "",
+        f"36组全尺寸温度拟合（两套输入、四档Nt及附加ξ）、有效参数迹估计和U/u剔除检查共{cfg['elapsed_seconds']:.2f}秒，不含数据来源核对、绘图、附加敏感性检验和时延采样。基准矩阵分解约{base['factor_seconds']:.2f}秒。因软硬件与数据矩阵结构不同，不应将这作为任意目标的保证时长。",
+        f"基准正规方程相对残差{base['normal_equation_relative_residual']:.2e}；任意波段常数平移导致的最大q差{base['offset_invariance_max_abs_q']:.2e}。有效拟合参数迹估计约{base['effective_parameters']:.1f}±{base['effective_parameters_mcse']:.1f}（后者仅Monte Carlo标准误，不是物理参数后验不确定度）。",
+        "独立检查使用Astropy完整Planck谱的有限差分验证径向核、直接方位角积分验证几何时间平滑、稠密联合线性求解验证稀疏Schur求解和正则项；见 `outputs/validation.json`。",
+        "", "## 文件", "",
+        "- `outputs/NGC5548_reproduction.pdf`：完整图册。",
+        "- `outputs/figures/`：每幅图的独立PDF、300dpi PNG和浏览预览。",
+        "- `outputs/figure_captions.md`：统计定义、共同/独立色标及各图限制。",
+        "- `derived/local_lightcurves.csv`：实际主输入；原始本地文件未覆盖。",
+        "- `outputs/fits.npz`：全部q、模型光变、波段顺序、时间与核。",
+        "- `outputs/metrics.json`、`paper_comparison.csv`、`band_residuals.json`：数值结果。",
+        "- `outputs/lag_*`：条件时延的设置、样本和诊断；若存在。",
+        "", "## 参考来源", "",
+        "1. [Neustadt & Kochanek 2022](https://arxiv.org/abs/2201.10565v2)：固定物理参数、反演与图5–7。",
+        "2. [Neustadt et al. 2024](https://arxiv.org/abs/2310.01497)：NGC5548 U残差图16。",
+        "3. [Fausnaugh et al. 2016](https://arxiv.org/abs/1510.05648)：HST/地面光变、地面有效波长；[公开目录](https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJ/821/56)。",
+        "4. [Edelson et al. 2019](https://arxiv.org/abs/1811.07956)：本地Swift重处理版的来源。",
+        "5. [TempMap示例](https://github.com/Zstone19/TempMap/blob/main/Examples/ArbitrarilySampledData_Tutorial.ipynb)：仅作为已指出问题的独立公开输入，不能据其标题断言与原作者结果相同。",
+        ""]
+    (ROOT/"RESULTS.md").write_text("\n".join(lines),encoding="utf8")
+    print("Updated RESULTS.md",flush=True)
+
+
+if __name__=="__main__":main()

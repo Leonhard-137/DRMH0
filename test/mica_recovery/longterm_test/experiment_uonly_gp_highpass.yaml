@@ -1,0 +1,59 @@
+# Inference-only paired detrending: do not use prepare.py to regenerate these inputs.
+experiment:
+  seed: 2026091901
+  output_dir: cases_uonly_gp_highpass
+  simulation_source: LTSIM
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+paired_ablation:
+  anchor_config: experiment_one_shared_blr.yaml
+  anchor_case: cases_one_shared_blr/one_shared_initial_refined
+  conditional_seed: 2026091902
+  fixed_alpha: 0.15291719122700673
+  unfiltered_response_gp:
+    tau_days: 55.3735295468
+    amplitude: 0.15396862368414638
+  cases:
+    uonly_gp_raw_u_s20:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+    uonly_gp_raw_u_s40:
+      blr: true
+      shared_driver: false
+      shared_response: true
+      unfiltered_response_gp: true
+mica_fit:
+  centroid_lag_days:
+  - 0.0
+  - 100.0
+  sigma_days:
+  - 0.14195358
+  - 152.84
+  gamma_sigma_days:
+  - 0.20075267806341413
+  - 216.14840087310387
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01
+detrending:
+  input_case: /home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_blr_uonly_gp_raw
+  bands:
+  - U
+  sigma_days:
+  - 20
+  - 40
+  formula: original - Gaussian weighted trend + original mean
+  error_mode: original
+  inference_only: true

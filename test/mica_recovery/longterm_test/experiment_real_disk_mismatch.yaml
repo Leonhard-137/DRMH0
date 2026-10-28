@@ -1,0 +1,75 @@
+# Causal/nonnegative physical responses plus two extra shared processes.
+# This is the numerical joint_score_iteration1 design from
+# predict/prediction_candidates.json. It tests whether model mismatch can make MICA
+# prefer an apparently very broad component; it does not inject a negative-lag
+# physical response and it does not define one deterministic W2-to-U kernel.
+#
+# From this directory:
+# /home/leonhard/miniforge3/envs/mica2/bin/python prepare.py --config experiment_real_disk_mismatch.yaml --suite real_disk_mismatch
+# /home/leonhard/miniforge3/envs/mica2/bin/python plot_inputs.py --config experiment_real_disk_mismatch.yaml --suite real_disk_mismatch
+# /home/leonhard/miniforge3/envs/mica2/bin/python fit.py --config experiment_real_disk_mismatch.yaml --suite real_disk_mismatch
+# Add --run to the last command only when ready to start MICA.
+experiment:
+  seed: 2026091701
+  output_dir: cases_real_disk_mismatch
+  simulation_source: LTSIM
+
+observations:
+  input_dir: ../../../Mrk817/fflux/host_sub
+  input_source: Mrk817
+  driver_band: UVW2
+  response_band: U
+  time_zero: common_first_epoch
+  amplitude_calibration: fixed_window_driver_rms
+  # Expected RMS after projecting the constant mean on the real W2 epochs.
+  driver_window_rms: 0.16900624325231342
+  noise: observed_per_epoch_fractional_errors
+
+real_disk_mismatch:
+  candidate_id: joint_score_iteration1
+  # Fourier inversion grid used by the expected-likelihood design.
+  covariance_dt_days: 0.025
+  covariance_n: 524288
+  # Origin-refined Starkey-kernel quadrature. No sampled-area renormalization.
+  disk_support_days: 100.0
+  disk_fine_factor: 4
+  disk_origin_cells: 256
+  disk_origin_order: 24
+  t1_kelvin: 2500.0
+  inclination_deg: 45.0
+  redshift: 0.031
+  driver_wavelength_observed_angstrom: 1928.0
+  response_wavelength_observed_angstrom: 3465.0
+  # Unit-variance illuminating OU process I0.
+  driver_tau_days: 30.0
+  # I0-to-U response: a*Psi_U,disk + b*Psi_BLR. These are gains, not fractions.
+  response_disk_gain: 0.8308564091936639
+  response_blr_gain: 0.17501283719316743
+  # Causal Gamma(k=2) BLR kernel: onset=6 d, scale=7 d, mean=20 d.
+  blr_onset_days: 6.0
+  blr_theta_days: 7.0
+  # Independent shared process sL: C(h)=(1+|h|/T)exp(-|h|/T).
+  long_q: 0.293989612247928
+  long_tau_days: 88.94570290976162
+  long_response_gain: 1.3877887617686266
+  long_lag_days: 0.00027762183848796046
+  # A second independent shared process with a long interband displacement.
+  short_q: 0.004747325030011962
+  short_tau_days: 9.074313763346947
+  short_response_gain: 1.0007353925783542
+  short_lag_days: 39.73095974612875
+  cases:
+    real_disk_mismatch_joint_score_iteration1: {}
+
+mica_fit:
+  # Match the full Mrk817 Gaussian/free and Gamma/free100 native priors.
+  centroid_lag_days: [0.0, 100.0]
+  sigma_days: [0.14195358, 152.84]
+  # Physical Gamma standard deviation; fit.py converts it to native theta.
+  gamma_sigma_days: [0.20075267806341413, 216.14840087310387]
+  gaussian_component_order: native
+  flag_negative_resp: false
+  max_num_saves: 10000
+  mpi_per_fit: 2
+  num_particles: 1
+  ptol: 0.01
