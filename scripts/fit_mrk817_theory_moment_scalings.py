@@ -7,6 +7,8 @@ the equivalent B_lambda zeroth and raw moments, fits log-log power laws, and
 compares them with the infinite self-similar b=3/4 disk predictions.
 """
 
+# 读取理论原始矩 CSV，检查有限盘的波长幂律与相对延迟/方差标度。
+# 输入默认来自 raw_moment_gamma 脚本；拟合残差和斜率标准误描述这些确定性网格点，不是观测后验。
 from __future__ import annotations
 
 import argparse
@@ -60,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+# 先把 M0、均值、方差组合成原始 M1/M2；B_nu -> B_lambda 的相对换算含 (lambda_ref/lambda)^2。
 def build_band_table(source: pd.DataFrame) -> pd.DataFrame:
     first = source.iloc[0]
     driver = pd.DataFrame(
@@ -127,6 +130,7 @@ def build_band_table(source: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
+# 确定性各波段点做 log-log 最小二乘；residual_slope_se 只是网格点偏离幂律的描述。
 def powerlaw_fit(
     table: pd.DataFrame,
     column: str,
@@ -211,6 +215,7 @@ def fit_all(table: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# 相对量拟合 A*(x^p-1)，强制参考波段为零；固定 p 解析求 A，随后允许 p 用 least_squares 改变。
 def fit_relative_difference(
     table: pd.DataFrame,
     column: str,

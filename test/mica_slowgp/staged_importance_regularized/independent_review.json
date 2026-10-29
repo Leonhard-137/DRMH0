@@ -1,0 +1,155 @@
+{
+  "passed": true,
+  "scope": "Independent raw-NPZ covariance/weight audit only; no EM, GP, or scientific sampling",
+  "reviewed_script": "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/regularize.py",
+  "script_sha256": "eb2af6fffc0ec597b0b4eaabf5b0b99e63d80e3b550ab39fdcaa1273e0369118",
+  "independent_method": "Reconstruct old training covariance from raw Student shape using longdouble; explicit loop within+between moments; apply alpha and reconvert; compare output arrays and audit arrays",
+  "conversion": "S=Cov_train*inflation^2*(nu-2)/nu",
+  "shrinkage": "alpha=(d+2)/(ESS+d+2); Cov_new=(1-alpha)Cov_train+alpha Cov_block",
+  "reviewed_component_count": 72,
+  "maximum_scale_formula_absolute_error": 1.7763568394002505e-15,
+  "evaluator_module_byte_identical": true,
+  "source_and_output_sha256": {
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_refined/artifacts/trained/stratum_00.npz": "8ae2bc40942a3a62a17e35f5874cd174cc311b86c92d4bc312d213b8ad9e3462",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_00.npz": "f5d7cdbef1ff5738d5cc9db3e6bf5277a7c9c3f83f8b4c9fe7c0a3708bf71193",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_refined/artifacts/trained/stratum_01.npz": "c8707dd7d35c3aeefb6ec3558bb71d8842e1d4c6004ed23802bdbccec86a463d",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_01.npz": "839f9cb9c43036cbd7f31a6d1b209b83394658378e01fbb2ab6d0852ce06f5c4",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_refined/artifacts/trained/stratum_02.npz": "7baf27e96fa691607423b2e47887c86adb81be40282b3144ec3526dc9b90a7e7",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_02.npz": "b4f3a76f85ef48182a78c9605b5309ea5f73bcc41f242a75707b269e26f1be2d"
+  },
+  "strata": [
+    {
+      "stratum": 0,
+      "dimension": 11,
+      "components": 24,
+      "means_and_full_weights_exactly_preserved": true,
+      "target_metadata_preserved": true,
+      "df_inflation_epsilon_preserved": true,
+      "source_matches_refined_training_hash": true,
+      "total_probability": 0.9999999999999999,
+      "conversion_factor": 1.0285714285714285,
+      "all_scales_positive_definite": true,
+      "minimum_scale_eigenvalue": 0.009101733699968364,
+      "scale_formula_max_absolute_error": 8.881784197001252e-16,
+      "scale_formula_max_relative_to_matrix_max_error": 1.6650202322227836e-16,
+      "blocks": [
+        {
+          "block": "base",
+          "full_probability": 0.4749999999999999,
+          "min_responsibility_ess": 1.5154844482894123,
+          "alpha_range": [
+            0.010431694047152452,
+            0.8955953241734205
+          ],
+          "within_trace": 16.062944958819024,
+          "between_trace": 8.58290682025972,
+          "total_covariance_min_eigenvalue": 0.04036911983682464
+        },
+        {
+          "block": "tail",
+          "full_probability": 0.475,
+          "min_responsibility_ess": 2.910932522733337,
+          "alpha_range": [
+            0.012763387936189483,
+            0.817048276801235
+          ],
+          "within_trace": 13.380774009220604,
+          "between_trace": 10.094188007337145,
+          "total_covariance_min_eigenvalue": 0.034063490538255844
+        }
+      ]
+    },
+    {
+      "stratum": 1,
+      "dimension": 11,
+      "components": 24,
+      "means_and_full_weights_exactly_preserved": true,
+      "target_metadata_preserved": true,
+      "df_inflation_epsilon_preserved": true,
+      "source_matches_refined_training_hash": true,
+      "total_probability": 1.0,
+      "conversion_factor": 1.0285714285714285,
+      "all_scales_positive_definite": true,
+      "minimum_scale_eigenvalue": 0.0006808376273852654,
+      "scale_formula_max_absolute_error": 8.881784197001252e-16,
+      "scale_formula_max_relative_to_matrix_max_error": 1.0429786209757957e-16,
+      "blocks": [
+        {
+          "block": "base",
+          "full_probability": 0.47500000000000003,
+          "min_responsibility_ess": 2.298569466847921,
+          "alpha_range": [
+            0.006300375675752656,
+            0.849752653551763
+          ],
+          "within_trace": 8.384967165277493,
+          "between_trace": 2.0389007266250125,
+          "total_covariance_min_eigenvalue": 0.0022419954786282253
+        },
+        {
+          "block": "tail",
+          "full_probability": 0.475,
+          "min_responsibility_ess": 1.3561902425061456,
+          "alpha_range": [
+            0.03196406974705316,
+            0.9055327200603189
+          ],
+          "within_trace": 8.79660407284618,
+          "between_trace": 4.897046403568855,
+          "total_covariance_min_eigenvalue": 0.006848281695184422
+        }
+      ]
+    },
+    {
+      "stratum": 2,
+      "dimension": 11,
+      "components": 24,
+      "means_and_full_weights_exactly_preserved": true,
+      "target_metadata_preserved": true,
+      "df_inflation_epsilon_preserved": true,
+      "source_matches_refined_training_hash": true,
+      "total_probability": 1.0,
+      "conversion_factor": 1.0285714285714285,
+      "all_scales_positive_definite": true,
+      "minimum_scale_eigenvalue": 0.0005263991900901012,
+      "scale_formula_max_absolute_error": 1.7763568394002505e-15,
+      "scale_formula_max_relative_to_matrix_max_error": 2.652603742887543e-16,
+      "blocks": [
+        {
+          "block": "base",
+          "full_probability": 0.47500000000000003,
+          "min_responsibility_ess": 2.778495857077769,
+          "alpha_range": [
+            0.005698182775972731,
+            0.823906164298201
+          ],
+          "within_trace": 10.722739073432018,
+          "between_trace": 3.6562717585134634,
+          "total_covariance_min_eigenvalue": 0.0021543911692404306
+        },
+        {
+          "block": "tail",
+          "full_probability": 0.47500000000000003,
+          "min_responsibility_ess": 1.9295660132756052,
+          "alpha_range": [
+            0.025910870392247393,
+            0.8707553848812615
+          ],
+          "within_trace": 13.012230104973385,
+          "between_trace": 7.590966115127819,
+          "total_covariance_min_eigenvalue": 0.0024797612321702167
+        }
+      ]
+    }
+  ],
+  "GP_likelihood_calls": 0,
+  "EM_calls": 0,
+  "scientific_fits_started": 0,
+  "limitations": [
+    "Responsibility-weight ESS is a concentration proxy, not independent training sample size",
+    "d+2 is a fixed proposal regularization heuristic, not a physical prior or calibrated shrinkage optimum",
+    "Component-dependent shrinkage can change aggregate proposal covariance; neither original aggregate covariance nor all directional variances are required to be preserved",
+    "Normalized positive-definite proposals do not imply lower importance variance, efficiency, mode coverage, posterior stability, or physical recovery",
+    "Fresh independent evaluation is required before efficiency assessment"
+  ]
+}

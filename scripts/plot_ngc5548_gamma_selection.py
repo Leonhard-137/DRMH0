@@ -8,6 +8,8 @@ posterior: 0 < tau0 < tau1.  Nested-sampling weights are retained and
 renormalized after selection.
 """
 
+# 统一 NGC5548/Mrk509 的两核比较，源由 UNIFIED_SOURCE 环境变量选择。
+# NGC5548 保留原时间约定；Mrk509 质心除以 1.0341。输出 analysis/gamma2_gaussian2_unified。
 from __future__ import annotations
 
 import csv
@@ -134,6 +136,7 @@ def gamma_data_dir(band: str) -> Path:
     return GAMMA_ROOT / f"run_W2_to_{band}_2comp_gamma{suffix}/data"
 
 
+# Gamma 先求 c+2w 再重标记，并除源专属 TIME_DILATION_FACTOR；振幅同步重排但不随时间单位缩放。
 def load_gamma(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     data_dir = gamma_data_dir(band)
     sample = np.loadtxt(data_dir / "sample1d.txt_2", comments="#")
@@ -152,6 +155,7 @@ def load_gamma(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     return {"comp0": tau[:, 0], "comp1": tau[:, 1], "f": f0}, weights, run_name
 
 
+# Gaussian 质心就是 c；这里与 Gamma 使用相同的按质心重标记和源时间换算规则。
 def load_gaussian(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     data_dir = GAUSSIAN_ROOT / f"run_W2_to_{band}_2comp_gaussian/data"
     sample = np.loadtxt(data_dir / "sample1d.txt_2", comments="#")
@@ -167,6 +171,7 @@ def load_gaussian(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     return {"comp0": tau[:, 0], "comp1": tau[:, 1], "f": f0}, weights, data_dir.parent.name
 
 
+# 筛选是条件化后验，权重必须除 retained；同时报告 retained 与 Kish ESS 才能识别少量样本支配。
 def select_gamma(values: dict[str, np.ndarray], weights: np.ndarray):
     keep = (values["comp0"] > 0.0) & (values["comp0"] < values["comp1"])
     retained = float(weights[keep].sum())

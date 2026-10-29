@@ -7,6 +7,8 @@ FFA.  For an apples-to-apples standard-disc comparison it marginalizes the
 saved two-parameter H0/f0 likelihood on a deterministic grid, avoiding the
 small between-chain Monte Carlo shifts visible when E(B-V)=0.
 """
+# 读取已完成的核消光/测距产物，比较指定源的 H0 和 SED 斜率对事后修正的敏感性。
+# SOURCE_SPECS 固定了历史数据版本；部分 NGC2617 数据互相包含，不能当独立样本合并。
 from __future__ import annotations
 
 import argparse
@@ -88,6 +90,8 @@ def branch_root(source: Path, cfg: dict) -> Path:
     return output / f"{ncomp}comp" / "result" / "comp0"
 
 
+# 从保存的 log-distance 均值/协方差构造 C=C_saved+f0^2 I，D(H0)=D70*70/H0。
+# 在有限矩形先验网格边际化 f0：logaddexp 累加稳定权重，再对 H0 梯形积分反演分位数。
 def marginal_h0_grid(
     distance_dir: Path,
     *,
@@ -151,6 +155,7 @@ def marginal_h0_grid(
     }
 
 
+# 对每个联合样本拟合 ln(lambda*Delta_F) 的幂律；固定权重来自边际相对半宽，保留原行配对。
 def _alpha_quantiles(
     delta_flux: np.ndarray,
     wavelengths: np.ndarray,
@@ -195,6 +200,7 @@ def _alpha_quantiles(
     }
 
 
+# 用已保存的逐波段 corr_nuc 反推修正前样本，再与既有 free SED 摘要核对。
 def sed_alpha_before_after(
     source: Path,
     cfg: dict,
@@ -246,6 +252,7 @@ def sed_alpha_before_after(
     }
 
 
+# 部分质量标签是对特定历史源名的硬编码判断，不会随新数据自动重新推断。
 def quality_label(row: dict[str, float | str | bool]) -> str:
     if row["label"] == "F9A":
         return "unstable: active EBV entirely negative before truncation"
@@ -359,6 +366,7 @@ def validate_overlap(root: Path) -> dict[str, int | bool]:
     }
 
 
+# 只有显式给 --notebook 才生成 nbformat 文档；生成 notebook 不等于执行其中计算。
 def write_notebook(path: Path, root: Path, csv_path: Path) -> None:
     """Create a compact rerunnable notebook companion with ``nbformat``."""
     import nbformat as nbf

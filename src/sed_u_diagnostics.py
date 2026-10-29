@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# 留出U波段的差分SED诊断：每个FFA联合样本内拟合其余波段并预测U。
+# 总光和短分量FFA是独立推断，不按相同样本编号相减；过量是描述性模型比较量。
+# 本入口读 Delta_F；论文表另有基于R的 u_rms_diagnostic，比较时须核对量和权重。
 """Build leave-U-out SED diagnostics from existing joint FFA posteriors.
 
 For each of the total-light and official short-component FFA products, this
@@ -38,6 +41,7 @@ MODELS = {
 }
 
 
+# 记录一套FFA后验的身份、波段、波长和输入路径，防止跨stage串用。
 @dataclass(frozen=True)
 class StageInput:
     stage: str
@@ -141,6 +145,7 @@ def short_ffa_root(source_dir: Path, cfg: dict, stage: str) -> Path:
     return branch_root(source_dir, cfg, stage) / "fflux"
 
 
+# 分别组装总光和所选MICA短分量的FFA输入；这里的stage标签也区分两套后验。
 def stage_inputs(source_dir: Path, cfg: dict, mica_stage: str) -> tuple[list[StageInput], Path]:
     source = str(cfg.get("source") or source_dir.name)
     total = dict(cfg.get("fflux", {}) or {})
@@ -216,6 +221,7 @@ def resolve_excluded_band(bands: tuple[str, ...], requested: str) -> str:
     return matches[0]
 
 
+# 兼容已保存差分通量后验列名；不自动把RMS振幅R当成Delta_F。
 def delta_flux_column(columns: pd.Index, band: str) -> str:
     exact = f"Delta_F_{band}"
     if exact in columns:
@@ -227,6 +233,8 @@ def delta_flux_column(columns: pd.Index, band: str) -> str:
     raise KeyError(f"missing FFA posterior column for {band}: expected {exact!r}")
 
 
+# 对所有样本向量化求解 log(S)=log_norm+alpha*log(lambda/pivot)。
+# 固定alpha只估计截距；自由alpha使用加权线性回归，权重由输入边际误差固定。
 def fit_log_powerlaw_draws(
     log_s: np.ndarray,
     x: np.ndarray,
@@ -281,6 +289,8 @@ def add_quantiles(row: dict, name: str, values: np.ndarray) -> None:
     row[f"{name}_p84"] = q84
 
 
+# 取同一联合样本的所有波段，筛选全正有限样本，再做留一波段预测。
+# valid_fraction描述这一筛选保留率；输出区间是筛选后的条件分布。
 def analyse_stage(
     source: str,
     stage: StageInput,
@@ -341,6 +351,8 @@ def analyse_stage(
     ).to_numpy(float)
     if not np.all(np.isfinite(y50) & np.isfinite(yerr) & (y50 > 0.0) & (yerr > 0.0)):
         raise ValueError(f"invalid FFA SED uncertainties in {stage.components_path}")
+    # 相对通量误差近似为对数误差，设置下限防止某一波段取得无限权重。
+    # 这里未把完整跨波段协方差矩阵代入广义最小二乘。
     sigma_log = np.clip(yerr / y50, 1.0e-4, None)
     observed = s_values[:, excluded_index]
 
@@ -356,6 +368,7 @@ def analyse_stage(
         )
         predicted = np.exp(log_norm + alpha * x[excluded_index])
         ratio = observed / predicted
+        # 这是无量纲 fractional_excess；需要百分比时再乘100。
         excess = ratio - 1.0
         if not np.all(np.isfinite(predicted) & (predicted > 0.0)):
             raise ValueError(f"{stage.stage}/{model} produced invalid U-band predictions")
@@ -405,6 +418,7 @@ def analyse_stage(
     )
 
 
+# 只汇总已算出的观测/预测比与过量分布；总光和短分量的样本不人为配对。
 def plot_summary(summary: pd.DataFrame, source: str, output_dir: Path) -> tuple[Path, Path]:
     stage_order = ("total_light", "short_component")
     stage_labels = {"total_light": "Total light", "short_component": "Short component"}
@@ -467,6 +481,7 @@ def plot_summary(summary: pd.DataFrame, source: str, output_dir: Path) -> tuple[
     return png, pdf
 
 
+# 遍历两套输入、写样本和汇总表、生成诊断图；不是纯读取操作。
 def run(
     source_dir: Path,
     excluded_band: str = "U",

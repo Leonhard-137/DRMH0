@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 论文图表总装入口：调用既有产物绘图器并生成 TeX include 文本。
+# main.py all 不会自动执行这里；本脚本也不会编译论文或重跑采样。
 """Render the agreed FFA, MICA and SED/lag figures and assemble paper includes.
 
 The sample order comes from Section 2's sample_observations.csv. All MICA
@@ -22,6 +24,7 @@ def tex_name(source):
     return base
 
 
+# 生成含图和图注的 TeX 页面片段，跨页续图与浮动体有不同处理。
 def page_block(path, caption, label=None, continuation=None):
     """A full-width, non-floating page keeps a multi-page figure together."""
     if continuation:
@@ -37,6 +40,8 @@ def page_block(path, caption, label=None, continuation=None):
     ])
 
 
+# 核对所有预期 PDF、样本顺序和 stage 来源清单，再生成论文引用片段。
+# 入口要求主文示例 Mrk817_a 存在；路径存在并不自动证明上游结果最新。
 def assemble(workspace, sources, stage):
     paper = workspace / "DRMH0"
     out = paper / "fig/paper"
@@ -159,6 +164,7 @@ def assemble(workspace, sources, stage):
     return manifest
 
 
+# 先按样本表/方案选择绘图任务，再装配论文使用的文件；所有输出均有写盘副作用。
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=ROOT)

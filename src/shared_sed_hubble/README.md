@@ -1,6 +1,6 @@
 # Shared standard-SED distance and H0 workflow
 
-本模块固定2026-09-04已运行的六波段共同SED、每源一个光度距离、固定f0=0的分析。科学模型与绘图样式均在src中；运行时不导入任何output目录内的临时脚本。原来的`python main.py hubble`仍对应旧的log-distance层次模型，本模块入口为`shared-hubble`。
+本模块统一六波段共同 SED、每源一个光度距离及下游 H0 分析。科学模型与绘图代码均在 src 中，运行时不导入 output 内的临时脚本。shared-hubble 保留固定零额外散布的源级基线；hubble-compare 接入 f_D 与本动速度的四方案比较。原来的 python main.py hubble 仍对应旧 log-distance 模型。
 
 ## 运行
 
@@ -65,3 +65,103 @@ make_plots(Path("output/shared_sed_hubble"))
 基准目录为`output/gamma_relaxed_downstream_20260903/joint_hubble_shared_sed_no_f0`。该试拟合得到H0=89.5662(-7.0347,+8.2732)，Hubble chi2/dof=49.6047/9。Mrk335、NGC6814的源间残差较大，多个源的标准SED失配明显，因此固定的是可复现的计算方法及样式，不能把该数值当作可靠的H0测量。NGC6814物理有效样本比例约88.12%；旧MICA中817 U/B、6814宽度及509 B低ESS的限制继续保留。
 
 迁移验收保存在`output/shared_sed_hubble_migration_check`：复用完成的源级结果重新运行H0 MCMC和绘图，不重采样源。新旧C内核在真实NGC5548的固定参数点完全一致；新绘图模块对原表格重绘的两张PNG逐像素一致。`--step validate`独立检查距离公式、六波段等距、源ESS/双链分位数和H0的一维积分，对本次基准的积分/MCMC分位数差最大约0.0364 km/s/Mpc。
+
+## 四方案本动速度比较
+
+正式入口（同一 mica2 Python 环境）：
+
+```bash
+python main.py hubble-compare
+python main.py hubble-compare --step validate
+python main.py hubble-compare --step plot
+python main.py hubble-compare --step plot --include-joint
+```
+
+默认读取已保存的 gamma 十源距离和 `data/peculiar_velocity/source_inputs.csv`；
+结果独立保存到 `output/peculiar_velocity_comparison_20261029`。
+`--step inputs` 只验证并合并输入，`--step fit` 完成推断及数值校验，
+`--step all`（默认）继续绘图。`--config` 使用 `comparison.yaml` 格式，
+与源级拟合的 `defaults.yaml` 区分；`--root` 解析输入路径，`--output` 指定结果目录。
+此入口不重跑 FFA/MICA；源级距离生成仍使用 `shared-hubble`。
+
+| 方案 | 额外相对距离散布 | 本动速度 |
+| --- | --- | --- |
+| A | 固定 f_D=0 | 关闭 |
+| B | 拟合 f_D | 关闭 |
+| C | 固定 f_D=0 | 流场均值 + 250 km/s 残余散度 |
+| D（主方案） | 拟合 f_D | 流场均值 + 250 km/s 残余散度 |
+
+四组共用同一份宿主系统 CMB 红移和原始距离均值/标准差，均传播 NED 已报告的
+CMB 红移测量误差。`z_saved` 单独保留原距离计算所用红移；
+它与新的 `z_cmb` 不互相覆盖。宿主/群选择在四组之间不得改变。
+每个 AGN 只有一个距离和一个潜在径向速度，不能把各波段当作独立的本动速度观测。
+
+取正速度为远离观察者。C/D 的模型为（v/c 的低速多普勒近似）：
+
+$$
+v_i \sim \mathcal N(v_{{\rm flow},i},250^2)\ {\rm km\,s^{-1}},\qquad
+1+z_{{\rm cos},i}=\frac{1+z_{{\rm CMB},i}}{1+v_i/c}.
+$$
+
+平直 LCDM 中 `Omega_m=0.3`，光度距离预测和条件方差为：
+
+$$
+\mu_i=\frac{c(1+z_{{\rm cos},i})}{H_0}
+\int_0^{z_{{\rm cos},i}}\frac{dz}{\sqrt{\Omega_m(1+z)^3+1-\Omega_m}},
+\qquad
+S_i^2=\sigma_{D,i}^2+(f_D\mu_i)^2.
+$$
+
+每源先对完整、含归一化项的
+`Normal(D_mean | mu, S²)` 似然边缘化速度与红移误差，然后相乘；
+不先平均距离，不把速度误差再加入 S²。
+H0 的先验为 Uniform[1,800] km/s/Mpc；B/D 的 f_D 先验为尺度 1 的半正态，
+数值网格到 5，并报告边界尾部质量。A/C 是独立的一维固定零散布模型。
+积分通过独立正态红移/速度的比值分布化为一维，使用标准正态变量上的
+Gauss-Legendre 求积，默认 64 节点；报告 z_cos<=0 的概率，
+超过 1e-6 就报错，绝不静默截断明显的非物理质量。
+
+`baseline_saved_z` 是额外的旧口径回归检查：采用原 z_saved、关闭新红移误差及
+本动速度，并拟合 f_D。它应复现已有的 H0=72.692723、f_D=0.627168
+中位数；新的 B 使用核实后的 CMB 红移，不应要求与旧值相等。
+
+输出包括：
+
+- `common_inputs.csv`、`input_provenance.json`：同一十源清单、原始/新红移、
+  流场均值、250 km/s、出处及输入文件指纹。
+- `comparison.csv`、`run_summary.json`：四组分位数、最大似然、先验与全部数值设置。
+- `cases/A` 至 `cases/D`：H0 后验、源级红移区间与残差；
+  B/D 另有 f_D 边缘和联合后验。
+- `validation.json`：概率归一化、网格分辨率、求积加倍与边界质量检查。
+- 图形 PDF 和 300 dpi PNG、`plot_manifest.json`：四面板哈勃图、H0 分布/区间、
+  B/D 的 f_D 分布；可额外画联合后验。图外说明给出误差棒和区间定义。
+
+哈勃图沿用原距离模数—对数红移图：对保存的 D_q16、D_q50、D_q84 分别计算
+mu=5 log10(D_L/Mpc)+25，以 mu_q50 为点、mu_q16/q84 为非对称纵向区间。
+每组附带 delta_mu 残差面板和原源名标注。该显示口径与原图一致；
+推断仍使用线性距离均值/标准差，不改成模数空间拟合。f_D 不混入图上的距离分位区间。
+横向区间是外部红移/速度分布的 68.27% 区间，没有条件于 H0 后验。
+随红移增加变小的是相对误差 sigma_z/z，绝对 sigma_z 约为 (1+z)250/c，
+不强制让高红移点的线性红移误差棒变短。
+
+这版实现以保存的盘距离为条件，纳入本动速度对宇宙学红移的主要影响。
+没有重新推断盘距离、修正多普勒增亮或传播跨源相干流场协方差；
+独立 250 km/s 是统一工作假设，不是每源实测速度误差。
+低红移流场必须落在固定模型覆盖范围内；缺失/未核实输入会停止计算。
+已有 SED 失配、倾角与上游采样限制仍然存在，四组比较不自动消除这些问题。
+
+实现位于 `redshift.py`（外部输入与约定）、`h0.py`（四组推断）、
+`comparison_plotting.py`（只读结果绘图）及 `comparison.py`（统一控制器）。
+原 `plotting.py`、`inference.py` 的历史入口继续兼容。
+
+冻结输入快照遵循仓库既有 data 忽略规则。需要从保留的原始数据重建或校验时，
+在具备 NumPy/Astropy 的环境中执行（主推断环境本身不需要 Astropy）：
+
+```bash
+python -m src.shared_sed_hubble.build_redshift_inputs --validate-only
+python -m src.shared_sed_hubble.build_redshift_inputs
+```
+
+显式添加 `--refresh` 才重新查询当前 NED 并刷新固定版本的流场数据。
+在全新数据目录首次重建时，也会下载尚不存在的原始输入。详细来源见
+`data/peculiar_velocity/README.md`；主 H0 推断始终读取冻结快照，不联网。

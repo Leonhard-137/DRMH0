@@ -6,6 +6,8 @@ tau = center + 2 exp(log_sigma).  Components are reordered by centroid in every
 posterior draw, so comp0 is the short component and comp1 is the delayed one.
 """
 
+# 固定 NGC4151_a：按每个抽样的质心大小同步重排核与振幅，再比较 Gamma/Gaussian。
+# Gamma 进一步选 0<tau_short<tau_long；文献 BLR 数值只作量级参照，不能识别 comp1 的物理成分。
 from __future__ import annotations
 
 import csv
@@ -89,6 +91,7 @@ def load_weights(data_dir: Path) -> np.ndarray:
     return weights / weights.sum()
 
 
+# 先求 Gamma tau=c+2w，再按每个抽样的 tau 排序并同步交换振幅；不会丢弃 native 顺序相反的抽样。
 def load_gamma(band: str) -> tuple[dict[str, np.ndarray], np.ndarray]:
     data_dir = GAMMA_ROOT / f"run_W2_to_{band}_2comp_gamma/data"
     sample = np.loadtxt(data_dir / "sample1d.txt_2", comments="#")
@@ -121,6 +124,7 @@ def load_gaussian(band: str) -> tuple[dict[str, np.ndarray], np.ndarray]:
     return {"comp0": tau[:, 0], "comp1": tau[:, 1], "f": f0}, weights
 
 
+# 在已经重标记的分布上条件化 0<tau_short<tau_long，重归一权重并报告保留质量。
 def selected_gamma(
     values: dict[str, np.ndarray], weights: np.ndarray
 ) -> tuple[dict[str, np.ndarray], np.ndarray, float]:
@@ -466,6 +470,7 @@ def make_histograms(
     plt.close(fig)
 
 
+# BLR/H-beta 参照和光学到 W2 的偏移来自上方固定数值；只供尺度对比，不能据此给宽核作物理归因。
 def make_blr_plot(
     gamma: dict[str, dict[str, np.ndarray]],
     gamma_w: dict[str, np.ndarray],

@@ -1,0 +1,42 @@
+{
+  "plan_id": "qmc_same_scramble_prefix_budget_v1",
+  "declared_date": "2026-10-22",
+  "source_run": "/home/leonhard/sci001/output/mica_slowgp/importance_qmc_budget_pilot/seed_82153_t32768_r8",
+  "output_directory": "/home/leonhard/sci001/output/mica_slowgp/importance_qmc_budget_pilot/prefix_budget_diagnostic",
+  "frozen_module_directory": "/home/leonhard/software/MICA2-slowgp/archive/importance-qmc-pilot-v1",
+  "module_sha256": {
+    "importance.py": "0d225a24a956545a070aebead19e45b9b5eb04a79817e515e38c893c781042d4",
+    "qmc_importance.py": "2f60bee73af4584695eef4c82bf6a9ef171fcc1f8a88491308400b5cc1933b2b"
+  },
+  "root_seed": 82153,
+  "case": "shared",
+  "mode": "shared",
+  "source_target_N": 32768,
+  "target_Ns": [2048, 8192, 32768],
+  "scrambles": 8,
+  "center_edges": [-3, 5, 20, 28],
+  "prior_mass_numerators": [64, 465, 432],
+  "prior_mass_denominator": 961,
+  "source_evaluation_rows": 1080320,
+  "component_budget_rule": "Use frozen qmc_importance.component_budget; Nk=2**max(3,ceil(log2(target_N*alpha_k)))",
+  "selection_rule": "Within each stratum/scramble/component, retain the first Nk rows in the source order; preserve source order when combining selected indices",
+  "weight_rule": "Recompute logimportance+logalpha_k-logNk-logR+logrho_s; never reuse source normalized weights",
+  "uncertainty_rule": "Use frozen scramble integral covariance and ratio delta method, never iid-row MCSE",
+  "summary_scope": "11 physical parameters, 4 existing derived TF quantities, and 3 fixed branches",
+  "quantile_probabilities": [0.05, 0.16, 0.5, 0.84, 0.95],
+  "evaluation_guard": "Require completed.json and an exited config.pid before opening any scientific raw results",
+  "execution_authorization": "Do not evaluate until root explicitly notifies completion; implementation and non-GP self-test only before then",
+  "source_mutation_allowed": false,
+  "new_GP_calls_allowed": false,
+  "new_proposal_draws_during_diagnostic": false,
+  "same_seed_correlated_budgets": true,
+  "independent_replicates": false,
+  "formal_stability_gate": false,
+  "truth_based_selection": false,
+  "limitations": [
+    "The three estimates reuse nested prefixes of the same eight scramble streams and are correlated",
+    "Eight scramble integrals supply only seven covariance degrees of freedom",
+    "Posterior ratio estimates and delta-method MCSE are approximate; unseen rare contributions remain possible",
+    "No independent-seed convergence claim, full 4x3 completion, physical component identity, distance or H0 claim"
+  ]
+}

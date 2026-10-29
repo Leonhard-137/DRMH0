@@ -1,0 +1,26 @@
+{
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_tau2_area9/raw",
+  "sigma_days": 20,
+  "driver_unchanged": false,
+  "bands": [
+    "UVW2",
+    "U"
+  ],
+  "baseline_flux": 7.0,
+  "formula": "original - Gaussian weighted trend + original mean",
+  "quoted_errors": "original",
+  "rms": {
+    "UVW2": {
+      "disk": 1.2497434422473346,
+      "BLR": 0.0,
+      "independent_S": 0.0,
+      "noise": 0.013410954043569298
+    },
+    "U": {
+      "disk": 0.9590116125750217,
+      "BLR": 0.027733780074290313,
+      "independent_S": 0.2894857752353058,
+      "noise": 0.028899887624891873
+    }
+  }
+}

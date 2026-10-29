@@ -1,0 +1,22 @@
+# Paths are relative to project_root (--root), not the current directory.
+output_dir: output/peculiar_velocity_comparison_20261029
+distance_summary: output/gamma_relaxed_downstream_20260903/joint_hubble_shared_sed_no_f0/source_distance_summary.csv
+redshift_inputs: data/peculiar_velocity/source_inputs.csv
+sources:
+  - F9_a
+  - Mrk142
+  - Mrk279_b
+  - Mrk335
+  - Mrk509
+  - Mrk817_a
+  - NGC2617_a
+  - NGC4151_a
+  - NGC5548
+  - NGC6814
+baseline_saved_z: true
+include_joint: false
+settings:
+  om0: 0.3
+  h0_step: 0.25
+  f_step: 0.004
+  velocity_nodes: 64

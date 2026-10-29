@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot Mrk 817 component-0 posteriors after an L-/centroid shape cut."""
 
+# 比较旧 Gamma 后验在 tau0<tau1 及 0.8<=2w0/tau0<=1.2 形状条件前后的分布。
+# 筛选改变了后验所条件化的集合；更窄的分布不能自动解释为恢复精度提高。
 from __future__ import annotations
 
 import argparse
@@ -26,6 +28,8 @@ RATIO_MIN = 0.8
 RATIO_MAX = 1.2
 
 
+# 列4/6、7/9分别存 logA/logw；取指数后得到正面积和尺度，tau=c+2w。
+# 后续掩码保留原生 tau0<tau1，不逐样本重标记；区域比例必须说明分母来自原始还是已筛样本。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     member = (
         f"2comp/run_UVW2_to_{band}_2comp_gamma/data/"

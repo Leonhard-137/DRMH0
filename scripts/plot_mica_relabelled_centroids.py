@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot weighted MICA centroid posteriors after per-draw component relabeling."""
 
+# 从源配置的 mica_round1/result 读取已按质心重标记的带权后验并作展示。
+# 不会自行重标记；先验证 tf0<=tf1。平滑且按峰值缩放的曲线用于形状比较，不是每日期间概率密度。
 from __future__ import annotations
 
 import argparse
@@ -52,6 +54,7 @@ def display_coordinate(tau):
     return np.arcsinh(np.asarray(tau, float) / LINEAR_SCALE_DAYS)
 
 
+# 在对称对数式坐标分箱，再 Gaussian 平滑与峰值归一；该显示密度不是物理 tau 坐标上的 PDF。
 def weighted_density(tau, weights, bin_edges):
     transformed = display_coordinate(tau)
     counts, _ = np.histogram(transformed, bins=bin_edges, weights=weights)
@@ -62,6 +65,7 @@ def weighted_density(tau, weights, bin_edges):
     return centers, counts
 
 
+# 用 (band,sample) 配对 tf0/tf1 检查顺序；不修改样本或自动修复标签。
 def validate_relabeling(table: pd.DataFrame, bands: list[str]) -> None:
     paired = (
         table[table["band"].isin(bands) & table["component"].isin(["tf0", "tf1"])]

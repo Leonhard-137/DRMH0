@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Summarize and plot NGC 6814 two-Gamma posterior centroids."""
 
+# 固定 NGC6814：读取 sample1d+weights，按质心重排后给短、长与总核质心。
+# 总核质心是面积加权均值；W2 的全零数组是参考锚，不能当作额外观测数据。
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -20,6 +22,7 @@ def weighted_quantiles(values: np.ndarray, weights: np.ndarray) -> tuple[float, 
     return tuple(float(np.interp(p, cdf, x)) for p in (0.16, 0.50, 0.84))
 
 
+# 短/长按每个抽样的质心排序，total=sum(A_i*tau_i)/sum(A_i)；不能直接平均两分量延迟。
 def load_band(band: str) -> tuple[dict[str, np.ndarray], np.ndarray]:
     if band == "W2":
         zero = np.zeros(10000, dtype=float)

@@ -13,6 +13,8 @@ It is not a coherent replacement of both width priors; it isolates whether an
 unconstrained second component is dominating the full w0*w1 weight.
 """
 
+# Mrk817 历史 Gamma ZIP 与 Gaussian 后验的总核形状、先验敏感性比较。
+# 读取等权 posterior_sample1d；不调用 MICA，但逐样本找混合核峰值仍需要数值优化时间。
 from __future__ import annotations
 
 import argparse
@@ -88,6 +90,7 @@ def read_gaussian(root: Path, band: str) -> tuple[np.ndarray, str]:
     return np.atleast_2d(samples), prior_text
 
 
+# 固定列 4/5/6 和 7/8/9 分别是 logA/c/logw；这里筛 native tau0<tau1，不逐行交换标签。
 def unpack_samples(raw: np.ndarray, model: str) -> dict[str, np.ndarray]:
     a0 = np.exp(raw[:, 4])
     c0 = raw[:, 5]
@@ -117,6 +120,7 @@ def unpack_samples(raw: np.ndarray, model: str) -> dict[str, np.ndarray]:
     }
 
 
+# Gaussian 用标准正态 CDF；Gamma 用正则化不完全 Gamma 函数，起点 c 之前概率为零。
 def component_cdf(t: np.ndarray, c: np.ndarray, w: np.ndarray, model: str) -> np.ndarray:
     if model == "Gaussian":
         return ndtr((t - c) / w)
@@ -163,6 +167,7 @@ def mixture_density(
     return f0 * d0 + (1.0 - f0) * d1
 
 
+# 对完整数学核的混合 CDF 做向量化二分；与随后 [-10,100] 窗口内的条件矩分开。
 def mixture_quantiles(
     p: dict[str, np.ndarray], model: str, probs: tuple[float, ...]
 ) -> np.ndarray:
@@ -186,6 +191,7 @@ def mixture_quantiles(
     return np.column_stack(answer)
 
 
+# 总核峰位用粗候选网格加局部有界优化；它不是两分量峰位/质心的面积加权平均。
 def mixture_modes(p: dict[str, np.ndarray], model: str) -> np.ndarray:
     """Find each total-mixture mode using a coarse vector grid plus refinement."""
     n = p["f0"].size
@@ -263,6 +269,7 @@ def truncated_first_moment(
     return np.where(x > 0.0, ans, 0.0)
 
 
+# 总质心 f*tau0+(1-f)*tau1；另外报告负延迟质量与指定窗口的质量/条件质心，避免截断混淆。
 def compute_invariants(p: dict[str, np.ndarray], model: str) -> dict[str, np.ndarray]:
     quantiles = mixture_quantiles(p, model, (0.1, 0.5, 0.9))
     centroid = p["f0"] * p["tau0"] + (1.0 - p["f0"]) * p["tau1"]
@@ -301,6 +308,8 @@ def empirical_quantiles(values: np.ndarray, weights: np.ndarray | None = None) -
     return np.interp(probs, cdf, x, left=x[0], right=x[-1])
 
 
+# 从 flat(log w) 改成 flat(w) 的先验比正比于 w；双宽度重加权正比 w0*w1。
+# 减最大 log-weight 防溢出；重加权仍依赖原样本覆盖新先验支持，ESS低时不能当作新拟合。
 def normalized_importance_weights(log_weight: np.ndarray) -> np.ndarray:
     shifted = log_weight - np.max(log_weight)
     weight = np.exp(shifted)

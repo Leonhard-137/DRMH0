@@ -8,6 +8,8 @@ the target theoretical absolute transfer function exactly in the continuous
 limit.  No curve is area- or peak-normalized for display.
 """
 
+# 重算固定有限盘的未归一化响应，并用零/一/二阶矩确定相对 k=2 Gamma 核。
+# 依赖 test/disk_transfer/disktf_diff.py；保留原始响应面积，不做面积/峰值归一化后再解释振幅。
 from __future__ import annotations
 
 import argparse
@@ -113,6 +115,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+# 在对数半径网格积分 2pi*W_nu(R)*R*dR*cos(i)，恢复被 disk_transfer_function 归一化去掉的原始面积。
 def raw_annulus_area(config: DiskConfig) -> float:
     """Integral of the pre-normalization disk response in common code units."""
     edges = np.logspace(
@@ -138,6 +141,7 @@ def raw_annulus_area(config: DiskConfig) -> float:
     )
 
 
+# M_n=sum(t^n*psi)*dt；mean=M1/M0，variance=M2/M0-mean^2，注意原始矩与中心矩不同。
 def density_moments(time: np.ndarray, density: np.ndarray, dt: float) -> Moments:
     m0 = float(np.sum(density) * dt)
     m1 = float(np.sum(time * density) * dt)
@@ -189,6 +193,8 @@ def mica_gamma(time: np.ndarray, solution: GammaSolution) -> np.ndarray:
     return density
 
 
+# 矩匹配给 A=M0_target/M0_driver、tau=mu_target-mu_driver、w=sqrt(DeltaVar/2)、c=tau-2w。
+# 精确匹配有限个矩不保证整条响应曲线一致，仍需看全域卷积残差。
 def solve_gamma(driver: Moments, target: Moments) -> GammaSolution:
     delta_variance = target.variance - driver.variance
     if delta_variance <= 0.0:
@@ -209,6 +215,7 @@ def solve_gamma(driver: Moments, target: Moments) -> GammaSolution:
     )
 
 
+# 以 Gamma CDF 的 bin 边界差计算 bin-average 密度，保留 A；FFT 卷积乘 dt，并正确加两个时间起点。
 def forward_convolution(
     driver_time: np.ndarray,
     driver_density: np.ndarray,

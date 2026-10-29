@@ -2,6 +2,8 @@
 """Compare total-light and short-component continuum lags with PyAT ICCF."""
 from __future__ import annotations
 
+# 对比链：去宿主 total 光变与 MICA 原生分量 -> 同观测时刻的 total/short -> PyAT ICCF。
+# short 是使用同一批观测反演出的模型重建，因此本脚本提供内部诊断，不构成独立恢复验证。
 import argparse
 import hashlib
 from pathlib import Path
@@ -14,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
+# PyAT 提供插值互相关和 Monte Carlo 延迟分布；这里没有再次调用 MICA 或 FFA 拟合。
 from pyat.ccf import iccf, iccf_mc
 
 from collect_mica_results import (
@@ -27,6 +30,7 @@ from collect_mica_results import (
 )
 
 
+# tau 的单位沿用输入时间（本项目为天）；没有在本脚本统一除以 1+z 转为静止系。
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS: dict[str, Any] = {
     "output_dir": "results/iccf",
@@ -63,6 +67,8 @@ def rel(base: Path, value: str | Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
+# stage 决定上游 MICA 配置；ICCF 小节覆盖数值默认值，输出目录随后按原生 comp0 路径重设。
+# 若需明确改输出位置，使用 run 的 output_override/命令行 --output-dir。
 def read_config(src: Path, stage: str) -> tuple[dict, dict, dict]:
     path = src / "config" / "source_config.yaml"
     if not path.is_file():
@@ -89,6 +95,7 @@ def model_label(fit: dict) -> str:
     return canonical_model_label(fit.get("type_tf", "gaussian"))
 
 
+# 先检查采样窗口、网格点数、阈值与重复数；这些是估计器设置，不是拟合结果质量判据。
 def validate_options(opt: dict) -> None:
     try:
         tau_beg, tau_end = map(float, opt["tau_range"])
@@ -136,6 +143,7 @@ def run_name(fit: dict, response: str) -> str:
     return configured_run_name(fit, response)
 
 
+# 当前实现按原生 MICA run 取 pline；branch 参数保留在接口中，但不据此读取条件分支目录。
 def branch_run_dir(
     src: Path,
     cfg: dict,
@@ -201,6 +209,8 @@ def validate_series(series: dict, minimum: int = 5) -> dict:
     return series
 
 
+# 读三列光变，可按 MICA 计数头提取块；先去掉非有限/非正误差行，再按时间排序。
+# 重复时刻并未合并，仍会在 validate_series 的严格单调检查中失败。
 def load_series(
     path: Path,
     band: str,
@@ -243,6 +253,7 @@ def load_observed(src: Path, cfg: dict, source: str, band: str) -> dict:
     return load_series(host_sub_dir(src, cfg) / f"{source}_{band}.txt", band)
 
 
+# pline 的第 0 块是参考波段，第 1 块是响应；pall 只用于核对两者块长度约定一致。
 def load_short_grid(
     src: Path,
     cfg: dict,
@@ -260,6 +271,8 @@ def load_short_grid(
     return load_series(pline, band, segment=1, count_file=pall)
 
 
+# total/short 只比较同一组实际观测时刻：不把密集重建网格伪装成额外观测点。
+# short 的流量和边际误差插值到这些时刻，但 MICA 重建的时间相关误差未传入 PyAT。
 def match_short_to_observed(short_grid: dict, observed: dict) -> tuple[dict, dict]:
     """Return total and short responses on the same observed epochs."""
     lo, hi = short_grid["t"][[0, -1]]
@@ -289,6 +302,7 @@ def match_short_to_observed(short_grid: dict, observed: dict) -> tuple[dict, dic
     return matched_observed, validate_series(short)
 
 
+# 恢复校验绑定实际 t/f/e 数组与估计设置，防止只因文件同名就复用另一批 MC 产物。
 def pair_signature(driver: dict, response: dict, opt: dict) -> str:
     """Fingerprint the numerical inputs and ICCF settings used by one pair."""
     digest = hashlib.sha256()
@@ -309,6 +323,8 @@ def pair_signature(driver: dict, response: dict, opt: dict) -> str:
     return digest.hexdigest()
 
 
+# 估计对象是参考波段与响应波段的插值相关函数，非响应核本身。
+# peak 对应相关峰位置，cent 由 PyAT 的 threshold/mode 定义；不要与 MICA 核质心混为同一估计量。
 def run_pair(driver: dict, response: dict, opt: dict) -> dict:
     tau_beg, tau_end = map(float, opt["tau_range"])
     ntau = int(opt["ntau"])
@@ -335,6 +351,8 @@ def run_pair(driver: dict, response: dict, opt: dict) -> dict:
         max_retries=retries,
     )
 
+    # 单次 MC 调用返回有效的相关峰/峰位置/质心样本；无效结果随后被共同掩码剔除。
+    # 请求次数与保留次数需一起检查，窄分布并不自动说明覆盖率可靠。
     # PyAT resets its internal random seed in iccf_mc.  One call per light-curve
     # pair is therefore essential: splitting a run into chunks repeats draws.
     r_mc, peak_mc, cent_mc = iccf_mc(
@@ -414,6 +432,8 @@ def save_pair(out: Path, source: str, band: str, stage: str, result: dict) -> No
         )
 
 
+# --resume 只有数值指纹、请求数、落盘行数与完成标记同时匹配才接受旧 MC。
+# 它复用 MC 分布，但仍会重算确定性的 CCF 曲线；不是任意半成品的续接。
 def load_complete_pair(
     out: Path,
     source: str,
@@ -548,6 +568,7 @@ def mica_summary(
     )
 
 
+# 对照表展示三种估计量的数值差；差列没有联合误差传播，不能直接解释成显著性。
 def comparison_table(summary: pd.DataFrame, mica: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "band",
@@ -570,6 +591,7 @@ def comparison_table(summary: pd.DataFrame, mica: pd.DataFrame) -> pd.DataFrame:
     return result.sort_values("total_wavelength")
 
 
+# 带权分位数先按值排序，再反演归一化累积权重；权重不等时不能用普通 percentile 替代。
 def weighted_quantiles(
     values: np.ndarray,
     weights: np.ndarray,
@@ -588,6 +610,7 @@ def weighted_quantiles(
     return tuple(float(np.interp(probability, cdf, values)) for probability in probabilities)
 
 
+# 按波段提取 MICA 的边际 tau 后验及归一化权重；此接口没有保留跨波段联合抽样身份。
 def mica_lag_posteriors(
     src: Path,
     cfg: dict,
@@ -631,6 +654,8 @@ def draw_from_mc(result: dict, size: int, rng: np.random.Generator) -> np.ndarra
     return rng.choice(values, size=size, replace=True)
 
 
+# 留 U 诊断固定 beta，使用非 U 波段估计 tau0，再比较 U 实际延迟与预测值。
+# 关系式 tau(lambda)=tau0*((lambda/lambda_ref)^beta-1) 在参考波段处强制为零。
 def u_lag_residuals(
     results: dict[tuple[str, str], dict],
     responses: list[str],
@@ -670,10 +695,13 @@ def u_lag_residuals(
         )
         if not np.isfinite(sigma).all() or np.any(sigma <= 0.0):
             raise ValueError(f"invalid ICCF centroid uncertainties for {stage} lag fit")
+        # 以边际 68% 区间半宽近似 sigma，闭式加权最小二乘：
+        # tau0 = sum(w_i*x_i*tau_i) / sum(w_i*x_i^2)，每个抽样重复同一映射。
         weight = 1.0 / np.square(sigma)
         denominator = float(np.sum(weight * np.square(x_fit)))
         if denominator <= 0.0:
             raise ValueError("non-U wavelengths do not constrain the fixed-slope lag relation")
+        # 各波段边际分别重抽样；共用参考光变引起的跨波段相关没有进入该联合分布。
         draws = np.column_stack(
             [draw_from_mc(results[(stage, band)], nsamp, rng) for band in fit_bands]
         )
@@ -725,6 +753,8 @@ def u_lag_residuals(
     return pd.concat(frames, ignore_index=True), pd.DataFrame(rows)
 
 
+# MICA 对照沿用同一个固定 beta 的留 U 关系，但改用带权 MICA 边际后验抽样。
+# 得到的 residual>0 比例是该条件模型和独立边际近似下的量，不是自动校准的检验 p 值。
 def mica_u_lag_residuals(
     posteriors: dict[str, tuple[np.ndarray, np.ndarray]],
     responses: list[str],
@@ -759,6 +789,7 @@ def mica_u_lag_residuals(
     if denominator <= 0.0:
         raise ValueError("non-U wavelengths do not constrain the MICA lag relation")
 
+    # 独立按每个波段的权重采样，不复原 MICA 跨波段协方差。
     rng = np.random.default_rng(int(opt["seed"]) + 314159)
     draws = np.column_stack(
         [
@@ -819,6 +850,7 @@ def mica_u_lag_residuals(
     return posterior, summary
 
 
+# 图中误差条是延迟分布的边际 16/50/84 分位数；画出的 tau0 曲线仅为固定 beta 诊断。
 def plot_results(
     out: Path,
     source: str,
@@ -945,6 +977,8 @@ def plot_results(
         plt.close(fig)
 
 
+# 主流程先完成所有 total/short 波段对，再读取现成 MICA 汇总构造对照和 U 残差。
+# nsim 默认 10000，因此这也是实际计算入口；阅读流程不需要启动它。
 def run(
     value: str | Path,
     *,
@@ -1000,6 +1034,8 @@ def run(
             src, cfg, fit, band, branch=branch, component_index=component_index
         )
         matched_total, short = match_short_to_observed(short_grid, observed)
+        # 这里的局部变量 stage 会覆盖 run 参数中的 MICA 小节名称；
+        # 下方 settings["mica_stage"] 因而会得到最后的 "short"，排查来源时需对照路径/配置。
         for stage, response in (("total", matched_total), ("short", short)):
             result = (
                 load_complete_pair(
@@ -1062,6 +1098,7 @@ def run(
         waves,
     )
 
+    # 设置文件还记录有效样本、重建误差相关性和独立边际近似，读结果时应与摘要一起核对。
     settings = {
         "source": source,
         "mica_stage": stage,
@@ -1108,6 +1145,7 @@ def run(
         print(out / name)
 
 
+# 未指定 --stage 时遍历 configured_stages；指定同一个输出目录给多个 stage 会被拒绝。
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_dir", type=Path)

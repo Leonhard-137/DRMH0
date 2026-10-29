@@ -1,0 +1,295 @@
+source: Mrk817_a
+reference_band: UVW2
+driver_band: UVW2
+redshift: 0.031
+band_list:
+- UVW2
+- UVM2
+- UVW1
+- U
+- B
+- V
+response_bands:
+- UVM2
+- UVW1
+- U
+- B
+- V
+bands:
+  UVW2: 1928
+  UVM2: 2246
+  UVW1: 2600
+  U: 3465
+  B: 4392
+  V: 5468
+lambda_tau:
+  lambda0_band: UVW2
+  branch_result_subdir: lag
+  fit_models:
+  - 4/3
+  - '2'
+  - free
+  nsamp: 10000
+  seed: 12345
+  free_beta_bounds:
+  - 0.01
+  - 8.0
+  tau0_bounds:
+  - 1.0e-06
+  - 1000.0
+  free_tau0_prior: log_uniform
+  free_mcmc_nwalkers: 48
+  free_mcmc_steps: 12000
+  free_mcmc_burn_frac: 0.3
+  free_mcmc_thin: 10
+  free_mcmc_progress: false
+  moment0:
+    enabled: true
+    branch_result_subdir: moment0
+    fit_models:
+    - standard
+    - slim
+    - free
+  second_moment:
+    enabled: true
+    branch_result_subdir: moment2
+    fit_models:
+    - 8/3
+    - '4'
+    - free
+    moment20_bounds:
+    - 1.0e-06
+    - 1.0e4
+    moment20_prior: log_uniform
+    free_gamma_bounds:
+    - 0.01
+    - 8.0
+fflux:
+  out: fflux
+  prepared_dir: prepared
+  steps:
+  - prep
+  - dered
+  - fit
+  - summ
+  - fvg
+  - sedfit
+  component:
+    name: total
+  bands:
+  - UVW2
+  - UVM2
+  - UVW1
+  - U
+  - B
+  - V
+  wavelengths:
+    UVW2: 1928
+    UVM2: 2246
+    UVW1: 2600
+    U: 3465
+    B: 4392
+    V: 5468
+  extinction:
+    law: F99
+    ebv: 0.0
+    rv: 3.1
+  fit:
+    max_saves: 10000
+    tau_min: 30.0
+    r_min: 1.0e-06
+    r_max: 30.0
+    thread_steps_factor: 2
+  sed:
+    redshift: 0.031
+    gal_ref: UVW2
+    x_faint: min
+    x_bright: max
+    nsamp: 10000
+    seed: 12345
+    posterior_skip: 0
+    posterior_thin: 1
+    posterior_log: true
+fflux_comp0:
+  component:
+    name: comp0
+  bands:
+  - UVW2
+  - UVM2
+  - UVW1
+  - U
+  - B
+  - V
+  wavelengths:
+    UVW2: 1928
+    UVM2: 2246
+    UVW1: 2600
+    U: 3465
+    B: 4392
+    V: 5468
+  fit:
+    max_saves: 10000
+    tau_min: 30.0
+    r_min: 1.0e-06
+    r_max: 30.0
+    thread_steps_factor: 2
+  sed:
+    redshift: 0.031
+    gal_ref: UVW2
+    x_faint: min
+    x_bright: max
+    nsamp: 10000
+    seed: 12345
+    posterior_skip: 0
+    posterior_thin: 1
+    posterior_log: true
+  prepared_dir: prepared
+  extinction:
+    law: F99
+    ebv: 0.0
+    rv: 3.1
+  steps:
+  - prep
+  - dered
+  - fit
+  - summ
+  - fvg
+  - sedfit
+  source: Mrk817_a
+  posterior_branch_out_template: runs/mica/gamma/free/2comp/result/comp0/fflux
+  mica:
+    driver: UVW2
+    driver_file: prepared/Mrk817_a_UVW2.txt
+    component_index: 0
+    response_time_support: driver
+    run_template: run_{driver}_to_{band}_{ncomp}comp_{type_tf}
+pipeline:
+  ffa_mpi: 2
+mica_stages:
+- mica_round1
+mica_gaussian2_free:
+  output_root: runs/mica/gaussian/free
+  prepared_dir: prepared
+  driver: UVW2
+  responses:
+  - UVM2
+  - UVW1
+  - U
+  - B
+  - V
+  run_template: run_{driver}_to_{band}_{ncomp}comp_{type_tf}
+  ncomp: 2
+  type_tf: gaussian
+  component_order: native
+  type_lag_prior: 0
+  lag_limit:
+  - 0.0
+  - 100.0
+  lag_prior:
+  - - 0.0
+    - 100.0
+  - - 0.0
+    - 100.0
+  width_limit: null
+  width_prior: null
+  flag_lag_posivity: false
+  flag_trend: 0
+  max_num_saves: 10000
+  num_particles: 1
+  ptol: 0.1
+  mpi_per_band: 2
+  max_parallel: 5
+  plot_decomp: true
+  posterior_branches:
+    enabled: false
+mica_gamma2_free:
+  output_root: runs/mica/gamma/free
+  prepared_dir: prepared
+  driver: UVW2
+  responses:
+  - UVM2
+  - UVW1
+  - U
+  - B
+  - V
+  run_template: run_{driver}_to_{band}_{ncomp}comp_{type_tf}
+  ncomp: 2
+  type_tf: gamma
+  component_order: moment1
+  type_lag_prior: 0
+  lag_limit:
+  - 0.0
+  - 100.0
+  lag_prior:
+  - - 0.0
+    - 100.0
+  - - 0.0
+    - 100.0
+  width_limit: null
+  width_prior: null
+  flag_lag_posivity: false
+  flag_trend: 0
+  max_num_saves: 30000
+  num_particles: 1
+  ptol: 0.01
+  mpi_per_band: 2
+  max_parallel: 5
+  plot_decomp: true
+  posterior_branches:
+    enabled: false
+smoothing:
+  method: normalized_gaussian_at_observation_times
+  sigma_days: 40.0
+  smooth_driver: true
+  output: highpass_residual_plus_original_mean
+  flux_formula: F_original - W @ F_original + mean(F_original)
+  offset: original_sample_mean_per_band
+  error_mode: original
+  input_flux_state: already_dereddened_and_host_subtracted
+  noise_covariance_used_by_mica: diagonal_only
+mica_round1:
+  output_root: runs/mica/gamma/free
+  prepared_dir: prepared
+  driver: UVW2
+  responses:
+  - UVM2
+  - UVW1
+  - U
+  - B
+  - V
+  run_template: run_{driver}_to_{band}_{ncomp}comp_{type_tf}
+  ncomp: 2
+  type_tf: gamma
+  component_order: moment1
+  type_lag_prior: 0
+  lag_limit:
+  - 0.0
+  - 100.0
+  lag_prior:
+  - - 0.0
+    - 100.0
+  - - 0.0
+    - 100.0
+  width_limit: null
+  width_prior: null
+  flag_lag_posivity: false
+  flag_trend: 0
+  max_num_saves: 30000
+  num_particles: 1
+  ptol: 0.01
+  mpi_per_band: 2
+  max_parallel: 5
+  plot_decomp: true
+  posterior_branches:
+    enabled: true
+    seed: 12345
+    decompose_nsamp: 3000
+    mpi_per_band: 1
+    max_parallel: 1
+    branches:
+      full:
+        label: Full posterior, moment1 component order
+        ranges:
+          tau0:
+          - null
+          - null

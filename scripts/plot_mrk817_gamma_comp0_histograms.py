@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot component-0 posterior histograms for the Mrk 817 two-Gamma fits."""
 
+# Mrk817 旧两 Gamma 的质心、FWHM、面积占比直方图及摘要。
+# 读取等权 posterior_sample1d 并筛 tau0<tau1；不与带权 sample1d/weights 混用。
 from __future__ import annotations
 
 import argparse
@@ -21,6 +23,8 @@ BANDS = ("UVM2", "UVW1", "U", "B", "V")
 FWHM_PER_W = 2.446386
 
 
+# 列4/6、7/9分别存 logA/logw；取指数后得到正面积和尺度，tau=c+2w。
+# 后续掩码保留原生 tau0<tau1，不逐样本重标记；区域比例必须说明分母来自原始还是已筛样本。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     member = (
         f"2comp/run_UVW2_to_{band}_2comp_gamma/data/"

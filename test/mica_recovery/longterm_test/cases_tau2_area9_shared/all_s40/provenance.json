@@ -1,0 +1,33 @@
+{
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_tau2_area9_shared/raw",
+  "reference_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_tau2_area9/raw",
+  "shared_slow_extension": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_tau2_area9_shared/shared_slow_extension.npz",
+  "sigma_days": 40,
+  "filtered_bands": [
+    "UVW2",
+    "U"
+  ],
+  "baseline_flux": 7.0,
+  "formula": "original - Gaussian weighted trend + original mean",
+  "driver_unchanged": false,
+  "rms": {
+    "UVW2": {
+      "disk": 1.306344140607065,
+      "BLR": 0.0,
+      "independent_S": 0.6897040481444138,
+      "noise": 0.013512622587811165
+    },
+    "U": {
+      "disk": 0.9992428477723654,
+      "BLR": 0.034394119770708345,
+      "independent_S": 0.6957551226542252,
+      "noise": 0.02967660928556734
+    }
+  },
+  "minimum_flux": {
+    "UVW2": 3.3564388710683977,
+    "U": 3.672600104400561
+  },
+  "quoted_errors": "original",
+  "noise_covariance_used_by_mica": "original diagonal errors; saved transformed covariance not supplied"
+}

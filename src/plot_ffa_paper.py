@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 论文 FFA 图的装配器：读取已有总光 FFA 结果，重绘并拼成论文页面。
+# 不会运行 FFA；fitz（PyMuPDF）用于保留矢量的 PDF 拼版。样本顺序由论文样本表决定。
 """Render the paper's FFA figures from saved total-light FFA products.
 
 The sample order comes from ``DRMH0/tables/sample_observations.csv``.  The
@@ -47,6 +49,8 @@ def source_label(source: str) -> str:
     return label
 
 
+# 解析并检查 components、联合通量后验、重建驱动及各波段输入的路径。
+# 这些路径会进入绘图来源记录，便于核对图是否来自期望的分析版本。
 def ffa_inputs(source_dir: Path, config: dict[str, Any]) -> dict[str, Any]:
     """Resolve the exact saved products used by the existing figure renderer."""
     ffa, _, components, posterior, reconstructed_x = _ffa_products(source_dir, config)
@@ -73,6 +77,7 @@ def ffa_inputs(source_dir: Path, config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# 把已有 PDF 面板作为矢量对象放到页面，不重新估计任何物理量。
 def stack_ffa_page(pdf_paths: list[Path], output_stem: Path) -> dict[str, str]:
     """Stack one or two source panels as vector-preserving PDF form objects."""
     if not 1 <= len(pdf_paths) <= 2:
@@ -100,6 +105,7 @@ def stack_ffa_page(pdf_paths: list[Path], output_stem: Path) -> dict[str, str]:
     return {"pdf": str(pdf), "png": str(png)}
 
 
+# 依照样本表组织总光 FFA 图和附录页面，并记录实际使用的输入。
 def build_ffa_paper(
     sample_table: Path = DEFAULT_SAMPLE,
     output_dir: Path = DEFAULT_OUTPUT,
@@ -172,6 +178,7 @@ def build_ffa_paper(
     return manifest
 
 
+# 在最终附录面板尺寸下重新绘制，避免单纯缩小整页导致文字难读。
 def reflow_ffa_appendix(
     sample_table: Path = DEFAULT_SAMPLE,
     output_dir: Path = DEFAULT_OUTPUT,

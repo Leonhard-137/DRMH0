@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 论文的原生 MICA 分量展示：观测光变、总响应、各分量和传递函数同图对照。
+# 光变阴影来自原生重建误差；TF 阴影来自保存的分位数，不能把两者视为同一统计定义。
 """Render paper MICA decomposition figures from existing native products.
 
 Contract: one source, a shared UVW2 driver and five response rows; observed
@@ -51,6 +53,8 @@ def band_label(band):
     return {"W2": "UVW2", "M2": "UVM2", "W1": "UVW1"}.get(band, band)
 
 
+# 按原生文件头声明的 driver/response 行数切成两个三列数组。
+# 这里允许打印精度导致的相同时间戳，但拒绝时间倒序；与严格递增读取器有区别。
 def blocks(path):
     with path.open() as handle:
         count = int(handle.readline().lstrip("# "))
@@ -70,6 +74,7 @@ def blocks(path):
     return result
 
 
+# 从指定源/方案定位原生文件并组织各响应波段；本图有固定的数据结构约定。
 def load_rows(source, config, stage):
     fit = config[stage]
     if fit["ncomp"] != 2 or fit.get("component_order") != "native":
@@ -104,6 +109,7 @@ def load_rows(source, config, stage):
     return rows
 
 
+# 读取指定原生重建列，保持原始归一化，不再按峰值或面积重新缩放。
 def native_curve(ax, values, color, time_origin, linestyle="-", alpha=0.20, lw=0.85):
     x, mean, error = values.T
     ax.fill_between(x - time_origin, mean - error, mean + error,
@@ -111,12 +117,14 @@ def native_curve(ax, values, color, time_origin, linestyle="-", alpha=0.20, lw=0
     ax.plot(x - time_origin, mean, color=color, lw=lw, ls=linestyle, zorder=3)
 
 
+# 取观测时刻、通量及误差，用于与连续重建曲线分开显示。
 def observed_points(ax, values, time_origin):
     ax.errorbar(values[:, 0] - time_origin, values[:, 1], yerr=values[:, 2],
                 fmt="o", ms=1.35, color="black", ecolor="0.45",
                 elinewidth=0.4, markeredgewidth=0, capsize=0, zorder=5)
 
 
+# 在同一源内对齐驱动和响应面板；对数坐标看不到的非正响应不等于不存在。
 def draw(source, config, stage, output):
     source, output = Path(source), Path(output)
     rows = load_rows(source, config, stage)
@@ -260,6 +268,7 @@ def draw(source, config, stage, output):
             for extension in ("pdf", "png", "json")}
 
 
+# 逐源出图并登记失败源；完成部分图不等于整套样本成功。
 def render_sample(workspace, sources, output_dir, stage="mica_gamma2_physw_relaxed"):
     """Render supplied sources in order; raise after recording any failures."""
     output_dir, root = Path(output_dir), Path(workspace)
@@ -286,6 +295,7 @@ def render_sample(workspace, sources, output_dir, stage="mica_gamma2_physw_relax
     return manifest
 
 
+# 论文样本表控制批量范围，不从根目录任意发现源。
 def run_batch(sample_table=SAMPLE_TABLE, stage="mica_gamma2_physw_relaxed", output_dir=PAPER_OUTPUT,
               root=ROOT):
     """Read the manuscript sample table and render every listed source."""

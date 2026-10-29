@@ -21,6 +21,8 @@ as a diagnostic because omitting leaked mass can bias c strongly negative.
 No existing library file is modified and no sampler is used.
 """
 
+# 理论结构诊断：以正的 shifted-k=2 Gamma 核把 UVW2 绝对盘响应卷积成目标波段响应。
+# 实际依赖 test/disk_transfer/disktf_diff.py，并生成理论网格、做差分进化与 Powell 优化；不是只读画图。
 from __future__ import annotations
 
 import argparse
@@ -230,6 +232,8 @@ def density_stats(t: np.ndarray, y: np.ndarray, dt: float) -> DensityStats:
     return DensityStats(area, mean, variance, math.sqrt(variance))
 
 
+# 正归一核卷积满足均值相加、方差相加：w=sqrt((Var_target-Var_driver)/2)，c=Delta_mean-2w。
+# 负方差差意味着此正卷积核模型不能匹配两个矩，不意味着数据一定出错。
 def moment_solution(driver: DensityStats, target: DensityStats) -> MomentSolution:
     delta_mean = target.mean - driver.mean
     delta_variance = target.variance - driver.variance
@@ -266,6 +270,7 @@ def gamma_k2_on_grid(s: np.ndarray, c: float, w: float) -> np.ndarray:
     return response
 
 
+# 每个波段生成同一时间网格，随后归一到单位面积；此分支比较响应形状，原始振幅已被除去。
 def build_theory_curves(
     parameter_set: str,
     response_mode: str,
@@ -308,6 +313,7 @@ def build_theory_curves(
     return common_time, common_dt, curves
 
 
+# 保存 driver/target 与含负延迟的卷积网格；full 与 positive_window 使用不同的残差积分域。
 class ForwardGammaProblem:
     def __init__(
         self,
@@ -356,6 +362,8 @@ class ForwardGammaProblem:
             ),
         }
 
+    # 先验定 w=exp(log_w)>0；离散核需捕获足够面积，再做 FFT full 卷积并乘 dt 近似积分。
+    # # 给定 c,w 后解析求非负 A=max(0,<target,model>/<model,model>)；objective 是归一化平方残差。
     def evaluate(self, c: float, log_w: float, domain: str) -> FitEvaluation | None:
         w = math.exp(log_w)
         kernel_raw = gamma_k2_on_grid(self.kernel_time, c, w)
@@ -416,6 +424,7 @@ class ForwardGammaProblem:
         )
 
 
+# 先差分进化搜索 c,logw，再 Powell 精修并取目标较小者；确定性结构拟合不提供统计置信区间。
 def fit_problem(
     problem: ForwardGammaProblem,
     domain: str,
@@ -474,6 +483,7 @@ def is_at_boundary(c: float, w: float, dt: float) -> bool:
     )
 
 
+# 同时记目标值、边界状态和卷积矩加法误差；优化器 success 与全局最优/物理可行不是同义词。
 def record_from_fit(
     parameter_set: str,
     response_mode: str,

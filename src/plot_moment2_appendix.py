@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 保存的二阶矩拟合结果的附录绘图器，不执行二阶矩参数推断。
+# SOURCES 和 gamma2 路径在本文件中固定；比较新分支时需先核对输入路径。
 """Build compact appendix pages for short-component second-moment fits."""
 
 from __future__ import annotations
@@ -35,11 +37,14 @@ MODELS = {
 }
 
 
+# 绘制 m2(lambda)=m20*((lambda/lambda0)**gamma-1)；m20 的单位随输入二阶矩为 day^2。
+# 这里的 gamma 是波长幂指数，不是 MICA Gamma 核的形状参数。
 def model(wavelength, moment20, gamma, lambda0):
     wavelength = np.asarray(wavelength, dtype=float)
     return moment20 * ((wavelength / float(lambda0)) ** gamma - 1.0)
 
 
+# 固定读取 gamma2/2comp/result/comp0/moment2 的已有表。
 def paths(workspace: Path, source: str) -> tuple[Path, Path]:
     root = workspace / source / "runs/mica/gamma2/2comp/result/comp0/moment2"
     return (
@@ -48,6 +53,7 @@ def paths(workspace: Path, source: str) -> tuple[Path, Path]:
     )
 
 
+# 读取 tf0、参考点和已拟合参数；参考点是相对二阶矩的零点。
 def draw_panel(ax, workspace: Path, source: str, title: str):
     points_path, summary_path = paths(workspace, source)
     points = pd.read_csv(points_path)
@@ -91,6 +97,7 @@ def draw_panel(ax, workspace: Path, source: str, title: str):
     return handles
 
 
+# 只组织面板布局和公共图例，不参与拟合。
 def draw_page(workspace: Path, targets, output: Path):
     ncols = min(3, len(targets))
     nrows = ceil(len(targets) / ncols)

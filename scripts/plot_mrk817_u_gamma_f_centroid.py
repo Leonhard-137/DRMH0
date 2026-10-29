@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot the U-band two-Gamma posterior in centroid--amplitude-fraction space."""
 
+# 读取历史 U 后验，画质心-面积占比并导出样本选择表。
+# 选择条件是 tau0<tau1 且 tau0>0.1天，面积占比不是光变均值的占比。
 from __future__ import annotations
 
 import argparse
@@ -20,6 +22,7 @@ DEFAULT_OUTPUT = Path(
 )
 
 
+# 原生 tau0=c0+2exp(logw0)，f0=exp(logA0)/(exp(logA0)+exp(logA1))；selected 仅标识条件子集。
 def posterior_columns(path: Path) -> dict[str, np.ndarray]:
     sample = np.loadtxt(path, comments="#")
     if sample.ndim != 2 or sample.shape[1] < 10:

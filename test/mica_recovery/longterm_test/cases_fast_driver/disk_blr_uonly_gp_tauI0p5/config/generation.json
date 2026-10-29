@@ -1,0 +1,83 @@
+{
+  "case": "disk_blr_uonly_gp_tauI0p5",
+  "reference_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_blr_uonly_gp_raw",
+  "parameters": {
+    "covariance_dt_days": 0.025,
+    "disk_support_days": 100.0,
+    "t1_kelvin": 5900.0,
+    "driver_wavelength_observed_angstrom": 1928.0,
+    "response_wavelength_observed_angstrom": 3465.0,
+    "driver_tau_days": 0.5,
+    "blr_theta_days": 7.0,
+    "long_tau_days": 55.3735295468,
+    "short_tau_days": 10.0,
+    "redshift": 0.031,
+    "response_disk_gain": 0.787,
+    "response_blr_gain": 0.15,
+    "blr_onset_days": 6.0,
+    "long_q": 0.623041375227,
+    "long_response_gain": 1.27560869565,
+    "long_lag_days": 2.90964381881,
+    "short_q": 0.0,
+    "short_response_gain": 0.0,
+    "short_lag_days": 0.0,
+    "inclination_deg": 45.0,
+    "covariance_n": 524288,
+    "disk_fine_factor": 4,
+    "disk_origin_cells": 256,
+    "disk_origin_order": 24,
+    "blr": true,
+    "shared_driver": false,
+    "shared_response": true,
+    "unfiltered_response_gp": true,
+    "independent_gp_tau_days": 55.3735295468,
+    "independent_gp_amplitude": 0.15396862368414638,
+    "independent_gp_seed": 2026091901
+  },
+  "alpha": 0.15291719122700673,
+  "illumination_seed": 2026100101,
+  "method": "Joint Gaussian sampling of three responses to one latent DRW using original physical kernels and Fourier covariance integration.",
+  "normalization": "Fixed reference alpha and unit stationary variance of latent DRW. No recalibration of W2 RMS and no realization RMS rescaling.",
+  "preserved": [
+    "observed epochs",
+    "quoted errors",
+    "saved independent U slow signal",
+    "saved noise in both bands",
+    "disk kernels",
+    "BLR kernel",
+    "response gains"
+  ],
+  "slow_process": "Saved U-only Matern-3/2 GP, added directly without disk filtering or shift; no S in W2.",
+  "minimum_covariance_eigenvalue": 8.371526544313662e-12,
+  "disk_kernel_areas": {
+    "UVW2": 1.00000092428717,
+    "U": 1.0000001927243196
+  },
+  "latent_DRW_theoretical_fraction_period_lt10d": 0.8062156167720903,
+  "statistics": {
+    "UVW2": {
+      "n_epochs": 314,
+      "span_days": 458.510897,
+      "median_quoted_error": 0.01357315636275,
+      "realized_rms": {
+        "disk": 0.12463488551539652,
+        "BLR": 0.0,
+        "independent_S": 0.0,
+        "noise": 0.013559005000915933,
+        "disk_plus_BLR": 0.12463488551539652
+      }
+    },
+    "U": {
+      "n_epochs": 324,
+      "span_days": 458.5118969999949,
+      "median_quoted_error": 0.02653507253945,
+      "realized_rms": {
+        "disk": 0.08693977469536934,
+        "BLR": 0.0037492571154110615,
+        "independent_S": 0.09356932709484046,
+        "noise": 0.029993358244217668,
+        "disk_plus_BLR": 0.08691293417164787
+      }
+    }
+  }
+}

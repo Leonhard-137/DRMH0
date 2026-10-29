@@ -1,3 +1,7 @@
+# 阅读入口：已保存的 comp0 光变 → 限制 SED 的原 FFA 似然 → 每个 AGN 一个距离 → 联合 H0。
+# 本模块会真正运行优化和 emcee；阅读、画图或代码注释检查不需要调用 source_run/finalize。
+# 专业依赖：emcee 采样；SciPy 优化、宇宙学积分与分位点；ffa.build_model 建立原始 GP 数据对象。
+# FastFFA 只是同一 FFA 似然的 C 加速接口，不把现有 MICA 后验变成光变到 H0 的联合后验。
 """Exact restricted FFA likelihood, existing lag posterior, one distance per AGN.
 This is staged inference, not a full joint MICA/lightcurve-to-cosmology model.
 """
@@ -16,12 +20,16 @@ from .config import RunConfig
 PROBS=np.array([ndtr(-1),.5,ndtr(1)])
 SEEDS=[940401,940417]
 
+# 把状态、模型约定和诊断写成 JSON；NumPy 标量转普通值，路径等对象转字符串。
 def dump(path,obj):
     path.write_text(json.dumps(obj,indent=2,ensure_ascii=False,default=lambda x:x.item() if isinstance(x,np.generic) else str(x))+'\n')
 
+# 输出正态 ±1σ 对应的中央分位区间；它不是“样本均值 ± 标准误”。
 def quant(prefix,x):
     return dict(zip([prefix+'_q16',prefix+'_q50',prefix+'_q84'],map(float,np.quantile(x,PROBS))))
 
+# 同一 logp 使用 32 个 walker；分批延长链，并检查自相关长度与有效样本数。
+# 不同 seed 的重复链在调用方比较分位数；这些数值诊断不验证物理模型是否正确。
 def ensemble(logp,initial,bounds,folder,tag,seed):
     rng=np.random.default_rng(seed); nw=32; ndim=len(initial); burn=1500
     width=np.array([b[1]-b[0] for b in bounds]); perturb=np.minimum(width*.01,.05)
@@ -43,6 +51,10 @@ def ensemble(logp,initial,bounds,folder,tag,seed):
     if not ok:raise RuntimeError('MCMC not converged: '+tag)
     return sampler.get_chain(discard=burn,flat=True),diag
 
+# 读取一个源的 fflux/run.yaml、消光后 comp0 光变和已有 fixed-β 延迟后验。
+# 固定 R_λ∝λ^(-7/3)，只拟合 log τ_DRW 与 log R_ref；每个波段常数背景仍被边缘化。
+# 这里的 τ_DRW 是驱动随机过程的相关时标，tau0 才是参考波段的盘延迟尺度，二者不可混用。
+# 输出 sources/<source>/distance_posterior.csv、summary.csv、链和模型/诊断 JSON。
 def source_run(source, settings: RunConfig):
     ROOT, OUT = settings.project_root, settings.output_dir
     SOURCES, REL = settings.sources, settings.result_subdir
@@ -59,6 +71,7 @@ def source_run(source, settings: RunConfig):
     shift=fit.get('time_shifts');shift={int(k):v for k,v in shift.items()} if shift else None
     model=build_model(filenames=[f'{source}_{b}_comp0.txt' for b in bands],data_dir=ffroot/'dered',time_shifts=shift,tau_min=float(fit['tau_min']),R_min=float(fit['r_min']),R_max=float(fit['r_max']))
     fast=FastFFA(model, library_path=OUT/'build/libffa_kernel.so'); logq=(-7/3)*np.log(waves/wave0)
+    # 共享振幅必须同时落在原有全部波段的 log R 先验内，所以求平移后区间的交集。
     amin=float(np.max(model.param_range[1:,0]-logq));amax=float(np.min(model.param_range[1:,1]-logq))
     bounds=[tuple(model.param_range[0]),(amin,amax)]
     def expand(theta):return np.r_[theta[0],theta[1]+logq]
@@ -88,6 +101,7 @@ def source_run(source, settings: RunConfig):
     allchain=np.concatenate(reps)
     rng=np.random.default_rng(940499+si)
     # Fixed posterior-mean driving reconstruction, as in the existing FFA pipeline.
+    # 只用一组后验平均参数重建 X(t) 的亮/暗极值；下面不会逐样本传播重建曲线的不确定性。
     representative=expand(np.mean(allchain,axis=0))
     tg,xg=fast.reconstruct(representative,ngrid=500)
     assert sed['x_bright']=='max' and sed['x_faint']=='min'
@@ -101,6 +115,7 @@ def source_run(source, settings: RunConfig):
     rms=np.exp(selected[:,1]);bright=aref+rms*xb;faint=aref+rms*xf;epsilon=faint/bright
     lag=pd.read_csv(base/'lag/absolute_lag_posterior_b4_3.txt',sep=r'\s+')
     tau_all=lag.tau0.to_numpy();assert np.allclose(lag.beta,4/3)
+    # 独立抽取已保存的延迟样本：保留两阶段近似，不声称这一行与 FFA 参数来自同一联合链。
     tau=rng.choice(tau_all,len(selected),replace=True)
     oldrun=pd.read_csv(base/'distance/standard/distance_run_summary.csv').iloc[0]
     assert np.isclose(oldrun.inclination_deg,45) and np.isclose(oldrun.disk_b,.75)
@@ -110,10 +125,12 @@ def source_run(source, settings: RunConfig):
     fnu=bright[valid]*1e-15*wave0**2/2.99792458e18*1e23
     ep=epsilon[valid]
     Dsaved=K*tau[valid]*(wave0/1e4)**(-1.5)*np.sqrt(np.cos(np.pi/4)/fnu)*(1-ep)/(1-ep**1.5)
+    # 当前观测系 τ、λ、Fν 距离约定中 Dsaved 被解释为 D_M；乘 (1+z) 后才保存 D_L（Mpc）。
     DL=Dsaved*(1+z)
     assert np.isfinite(DL).all() and (DL>0).all()
     pd.DataFrame(dict(tau0=tau[valid],tau_DRW=np.exp(selected[valid,0]),A=rms[valid],A_ref=aref[valid],epsilon=ep,F_bright_ref=bright[valid],D_saved=Dsaved,D_L=DL)).to_csv(folder/'distance_posterior.csv',index=False)
     # Same common-SED parameters must give exactly the same distance at every band.
+    # 共享 SED 与 β=4/3 使各波段距离代数上一致；此检查验证实现自洽，不是六个独立距离观测。
     consistency=[]
     for j,wave in enumerate(waves):
         fb=bright[valid]*np.exp(logq[j]);fn=fb*1e-15*wave**2/2.99792458e18*1e23
@@ -139,6 +156,9 @@ def source_run(source, settings: RunConfig):
     dump(folder/'status.json',dict(state='complete',source=source,elapsed_seconds=time.time()-start,summary=summary))
     print(json.dumps(summary),flush=True)
 
+# 将每个 AGN 的 D_L 后验压缩为线性距离均值、标准差，然后相乘独立源的高斯似然。
+# 固定 Ωm=0.3、额外散度 f0=0、特殊速度为零；H0 在 (1,800) 内取均匀先验。
+# 此旧基线与 h0.py 的四情景比较不同：后者读取冻结距离并边缘化外部红移/速度。
 def finalize(settings: RunConfig):
     OUT, SOURCES = settings.output_dir, settings.sources
     if len(SOURCES) < 2:
@@ -163,6 +183,7 @@ def finalize(settings: RunConfig):
         h=float(theta[0])
         if not 1<h<800:return -np.inf
         return float(-.5*np.sum(((obs-K/h)/sd)**2+np.log(2*np.pi*sd**2)))
+    # 以 a=1/H0 写模型 D=K a，可解析求加权最小二乘极值；最终后验仍按均匀 H0 先验采样。
     ah=np.sum(K*obs/sd**2)/np.sum((K/sd)**2);hhat=1/ah
     reps=[];di=[]
     for i,seed in enumerate(SEEDS):
@@ -184,6 +205,8 @@ def finalize(settings: RunConfig):
     dump(OUT/'validation.json',dict(state='numerically_complete',source_statuses='all complete',f0=0,peculiar_velocity=0,number_of_H0_likelihood_terms=len(d),H0_prior=[1,800],MICA_rerun=False,SED_inference='exact restricted FFA likelihood',H0_inference='two-stage Gaussian linear-distance summary approximation',Gaussian_D_covariance_inversion=False,shared_FFA_parameters_counted_once=True,kernel_provenance='verified scalar FFA implementation; see src/shared_sed_hubble/README.md',h0=hsum,visual_review='pending'))
     print(json.dumps(hsum,indent=2),flush=True)
 
+# 缓存检查核对源、盘指数、倾角、延迟文件路径和 SED 约定。
+# 这些字段匹配不等于输入文件内容未变化；若替换原路径上的科学输入，应选新输出目录。
 def validate_cached_source(source, settings):
     """Reject cached products from a different source/model/input branch."""
     folder=settings.output_dir/'sources'/source
@@ -199,6 +222,8 @@ def validate_cached_source(source, settings):
         raise ValueError(f'Cached model/branch mismatch: {source}; use a separate output directory')
 
 
+# 针对已保存结果独立重算距离单位换算与一维 H0 网格，比较 MCMC 分位数。
+# 同时读取已存 ESS/重复链/跨波段一致性诊断；该函数不重跑 FFA，但会写验证 JSON。
 def validate_results(settings):
     """Independent posterior/grid and distance-unit regression on saved results."""
     from scipy.integrate import cumulative_trapezoid

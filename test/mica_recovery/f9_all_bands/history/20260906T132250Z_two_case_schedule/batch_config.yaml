@@ -1,0 +1,10 @@
+# Complete the existing F9 recovery experiment: 10 old fits + 15 new fits.
+parent_experiment: ../f9_m2_b
+driver: W2
+all_response_bands: [M2, W1, U, B, V]
+new_response_bands: [W1, U, V]
+reused_response_bands: [M2, B]
+cases: [disk_only, response_within, random_within, response_beyond, random_beyond]
+max_concurrent_cases: 2
+stage: mica_recovery
+noise_seed_children: {W1: 6, U: 7, V: 8}

@@ -93,10 +93,14 @@ class MedianKernel:
     center: float
 
 
+# 计算面积归一的正响应核：积分为 A，纵轴单位为 A/day；w 的意义随核族而变。
+# Gaussian 的 w 是标准差；tophat 的 w 是半宽；Gamma(shape=2)/exp 的 w 是尺度。
+# 这里 center 为 Gamma/exp 起点，后验统计中的 tau 则是质心。
 def kernel(lag, amplitude, center, width, kind: str) -> np.ndarray:
     """Native positive-response kernels; center is the onset for Gamma/exp."""
     delta = np.atleast_1d(lag)[None, :] - np.atleast_1d(center)[:, None]
     w = np.atleast_1d(width)[:, None]
+    # A 除以宽度提供 1/day 的归一化；后面的无量纲核形状决定面积仍等于 A。
     scale = np.atleast_1d(amplitude)[:, None] / w
     u = delta / w
     if kind == "gaussian":
@@ -111,6 +115,9 @@ def kernel(lag, amplitude, center, width, kind: str) -> np.ndarray:
     raise ValueError(f"unsupported transfer-function family: {kind}")
 
 
+# 这里 joint 指同一行的联合参数，不是 run_mica_joint 的多响应联合模型。
+# 该 reader 明确要求 4+3*ncomp 列，即一个驱动、一个响应；保存参数需与配置核族一致。
+# posterior_sample1d 已经等权重采样，不能再次乘 raw sample 的 weights.txt。
 def read_joint_parameters(run: Path, fit: dict):
     """Return validated native joint rows, with whole-component relabelling.
 
@@ -157,6 +164,7 @@ def read_joint_parameters(run: Path, fit: dict):
     return sample, names, kinds, int(np.count_nonzero(swapped))
 
 
+# 共用后验语义转换得到物理面积、起点/中心、尺度和质心，拒绝非有限或非正参数。
 def read_component_parameters(run: Path, fit: dict):
     """Return physical kernel arrays from the shared validated joint rows."""
     sample, names, kinds, nswapped = read_joint_parameters(run, fit)
@@ -172,12 +180,14 @@ def read_component_parameters(run: Path, fit: dict):
     return amplitudes, centers, widths, centroids, kinds, nswapped
 
 
+# 取统计标签 comp0；函数名 disk_grid 等历史命名不构成 comp0 的盘成分认定。
 def read_parameters(run: Path, fit: dict):
     """Return comp0 arrays for the pointwise-posterior-quantile figures."""
     amplitudes, centers, widths, _, kinds, nswapped = read_component_parameters(run, fit)
     return amplitudes[0], centers[0], widths[0], kinds[0], nswapped
 
 
+# legacy Gamma 是只读绘图别名，只重定向历史输出目录，不把历史拟合加入默认执行列表。
 def transfer_stage_config(cfg: dict, stage: str) -> dict:
     """Resolve one plotting stage, including the read-only legacy Gamma alias.
 
@@ -196,6 +206,8 @@ def transfer_stage_config(cfg: dict, stage: str) -> dict:
     return fit
 
 
+# 原生 total 文件四列是 lag、median、下误差、上误差；转换成下界/中位数/上界。
+# 不对核再归一化；文本舍入导致略负的下界仍保存在数据中，仅绘图时受 Log 轴限制。
 def read_total(path: Path) -> np.ndarray:
     """Read native lag/median/error columns without resampling or normalizing."""
     values = np.loadtxt(path, ndmin=2)
@@ -210,6 +222,9 @@ def read_total(path: Path) -> np.ndarray:
     return np.column_stack((lag, median - lower_error, median, median + upper_error))
 
 
+# 仅为 comp0 构造绘图网格：覆盖每条后验核的有限尾部窗口并包含零/负延迟。
+# 宽度分位数控制分辨率而不是筛选样本；点数超上限时用 asinh 网格并明确警告尾部可能欠分辨。
+# Gamma 起点处增加局部点，避免对数纵轴把突变附近的形状画错。
 def disk_grid(center, width, kind: str) -> np.ndarray:
     """Fine comp0 grid including negative lag and zero, independent of total.
 
@@ -242,6 +257,7 @@ def disk_grid(center, width, kind: str) -> np.ndarray:
     if not np.isfinite(span) or span <= 0:
         raise ValueError("comp0 grid has invalid bounds")
     # Interpolated quantiles can involve two onset order statistics each.
+    # 点数上限需要预留 Gamma 分位数起点附近的额外网格，不能只限制均匀基础网格。
     reserve = 2 * len(QUANTILES) * (ONSET_GRID_POINTS + 1) if kind == "gamma" else 0
     base_cap = MAX_GRID_POINTS - reserve
     required = span / scale * 25.0
@@ -276,6 +292,8 @@ def disk_grid(center, width, kind: str) -> np.ndarray:
     return grid
 
 
+# 在每个 lag 上先求每条后验的核值，再取点态分位数；分块限制内存，不减少样本。
+# 这是逐点可信带，不是整条函数同时被包住的概率带；曲线中位数通常也不属于任一真实样本。
 def pointwise_quantiles(lag, amp, center, width, kind: str) -> np.ndarray:
     """Return q15.85/q50/q84.15 at each lag using all equal-weight draws."""
     lag = np.asarray(lag, dtype=float)
@@ -284,6 +302,7 @@ def pointwise_quantiles(lag, amp, center, width, kind: str) -> np.ndarray:
         raise ValueError("posterior parameter arrays must be nonempty and have matching shapes")
     quantiles = np.empty((len(lag), 3))
     # Limit each temporary sample x lag matrix to about one million doubles.
+    # 按 lag 分块，每块仍使用所有后验样本；大致把临时矩阵限制在一百万个浮点数。
     chunk = max(1, min(256, 1_000_000 // len(amp)))
     for start in range(0, len(lag), chunk):
         values = kernel(lag[start:start + chunk], amp, center, width, kind)
@@ -293,6 +312,8 @@ def pointwise_quantiles(lag, amp, center, width, kind: str) -> np.ndarray:
     return quantiles
 
 
+# 另一种展示：分别取 A、tau、w 的边际中位数，再由 tau 与 w 反算核起点。
+# 分别取中位数会忽略参数间相关性；这条确定性曲线不是点态后验中位曲线，也不携带可信带。
 def median_kernels(amplitudes, centroids, widths, kinds: list[str]) -> tuple[MedianKernel, ...]:
     """Take one independent posterior median for each physical kernel parameter.
 
@@ -326,6 +347,7 @@ def median_kernels(amplitudes, centroids, widths, kinds: list[str]) -> tuple[Med
     return tuple(result)
 
 
+# 把每个中位参数核的局部网格与全局网格合并，保留起点、质心和零点。
 def median_parameter_grid(parameters: tuple[MedianKernel, ...]) -> np.ndarray:
     """Resolve every median kernel from its onset through its visible tail."""
     if not parameters:
@@ -361,6 +383,7 @@ def median_parameter_grid(parameters: tuple[MedianKernel, ...]) -> np.ndarray:
     return grid
 
 
+# 先用每个分量的边际中位参数生成核，再求和；不是对总核逐点取后验中位数。
 def median_parameter_curves(
     parameters: tuple[MedianKernel, ...],
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -388,6 +411,8 @@ def median_parameter_curves(
     )
 
 
+# comp0 从等权后验重新计算点态区间；total 保留原生 tranfunc 文件。
+# 两者拥有独立网格，比较前要留意原生 total 网格分辨率和来源是否与后验匹配。
 def stage_transfers(source_dir: Path, cfg: dict, fit: dict) -> list[BandTransfer]:
     """Validate and calculate every response before creating any output folder."""
     driver = str(fit.get("driver", ""))
@@ -416,6 +441,7 @@ def stage_transfers(source_dir: Path, cfg: dict, fit: dict) -> list[BandTransfer
     return result
 
 
+# 中位参数分支只依赖后验与核定义，total 也重新求和，不读取旧原生 total 曲线。
 def median_stage_transfers(source_dir: Path, cfg: dict, fit: dict) -> list[BandTransfer]:
     """Build analytic curves from independent posterior-median f, tau, and w."""
     driver = str(fit.get("driver", ""))
@@ -443,6 +469,7 @@ def median_stage_transfers(source_dir: Path, cfg: dict, fit: dict) -> list[BandT
     return result
 
 
+# 为同一波段的 comp0/total 设统一对数纵轴，显示峰值以下约六个数量级。
 def amplitude_limits(band: BandTransfer) -> tuple[float, float]:
     """Shared per-band log-Y window, about six decades below the peak."""
     maximum = max(float(np.max(curve[:, 3])) for curve in (band.comp0, band.total))
@@ -457,6 +484,7 @@ def amplitude_limits(band: BandTransfer) -> tuple[float, float]:
     return float(lower), float(upper)
 
 
+# 根据当前纵轴可见尾部选择显示窗口；不裁剪 CSV，不把窗外面积当成零。
 def lag_limits(curve: np.ndarray, floor: float) -> tuple[float, float]:
     """Frame every visible envelope point, including negative lag and other peaks.
 
@@ -481,6 +509,8 @@ def lag_limits(curve: np.ndarray, floor: float) -> tuple[float, float]:
     return max(float(lag[0]), float(low)), min(float(lag[-1]), float(high))
 
 
+# 独立单面板与概览共用同一数据；横轴为观测者系相对 driver 的天数，未除以 (1+z)。
+# 对数轴不显示非正中位值，填色下界只为显示截到纵轴下限；导出表仍保留原始数值。
 def plot_stage(
     source: str,
     stage: str,
@@ -628,6 +658,7 @@ def plot_stage(
             plt.close(fig)
 
 
+# 导出全部网格及来源路径、标签规则、换标号数量；curve_method 区分两种不同曲线定义。
 def write_csv(
     source: str,
     stage: str,
@@ -666,6 +697,7 @@ def write_csv(
                     writer.writerow(dict(metadata, lag_days=lag, q1585=lower, q5000=median, q8415=upper))
 
 
+# 记录实际代入解析核的边际中位数，便于从参数重建并核查图线。
 def write_median_parameter_summary(
     source: str,
     stage: str,
@@ -706,6 +738,8 @@ def write_median_parameter_summary(
                 })
 
 
+# 读取已保存结果后批量绘图；不拟合，但会新建/更新图与 CSV。
+# 至少一个 source/stage 成功就返回 0，因此批量任务还需查看 [skip]，不能把 0 当作全部成功。
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("sources", nargs="*", help="source directory name(s) or paths")

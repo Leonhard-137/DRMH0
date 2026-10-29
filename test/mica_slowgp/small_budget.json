@@ -1,0 +1,11 @@
+{
+  "max_num_saves": 400,
+  "num_particles": 2,
+  "thread_steps_factor": 2.0,
+  "new_level_interval_factor": 2.0,
+  "save_interval_factor": 2.0,
+  "max_num_levels": 0,
+  "lam": 10.0,
+  "beta": 100.0,
+  "ptol": 0.1
+}

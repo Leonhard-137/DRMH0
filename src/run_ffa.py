@@ -3,6 +3,8 @@
 """Run total or MICA-component light-curve FFA/FVG analyses."""
 from __future__ import annotations
 
+# 生产链路：prepared 或 MICA 分量重建 -> FFA 输入 -> 消光/拟合 -> FVG/宿主/SED 产物。
+# 本文件负责路径、契约与后处理；核心随机过程和采样似然由外部 ffa 包实现。
 import argparse
 import re
 import struct
@@ -12,6 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import yaml
+# MPI 控制多进程采样和阶段同步；fit 会让所有 rank 进入，其余写文件步骤只在 rank 0 执行。
 from mpi4py import MPI
 
 from collect_mica_results import (
@@ -27,6 +30,8 @@ from posterior_branches import branch_result_relative_dir
 
 COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
+# 这是可选步骤名的全集，不是适用于每种分量的通用流水线。
+# host 只接受 total，distance_flux 只接受 comp0；配置应显式选择适合的步骤子集。
 STEPS = (
     "prep",
     "dered",
@@ -69,6 +74,7 @@ def rel(src: Path, path: str | Path) -> Path:
     return path if path.is_absolute() else src / path
 
 
+# 将 source_config 中的 FFA 小节补齐为统一接口；这里只设置默认值，不启动拟合。
 def fflux_config(config: dict[str, Any], section: str) -> dict[str, Any]:
     ff = dict(config.get(section, {}) or {})
     if not ff and section == "fflux":
@@ -87,6 +93,8 @@ def fflux_config(config: dict[str, Any], section: str) -> dict[str, Any]:
     return ff
 
 
+# 旧式 posterior branch 路径：从 mica_round1 的分支定义选择已收集的条件后验重建。
+# 分支筛选改变了样本所条件化的集合，不能自动当作原始完整后验。
 def posterior_branch_fflux_config(
     src: Path,
     config: dict[str, Any],
@@ -151,6 +159,8 @@ def posterior_branch_fflux_config(
     return ff
 
 
+# 原生分量路径：读取指定 MICA stage 的完整后验产物，不在这里逐样本重排分量标签。
+# comp0/comp1 的物理身份须由上游先验与模型约定保证；数字标签本身不保证“盘/BLR”。
 def mica_component_fflux_config(
     src: Path,
     config: dict[str, Any],
@@ -227,6 +237,7 @@ def mica_component_fflux_config(
     return ff
 
 
+# 保留用户给出的阶段顺序并去重，不自动补齐依赖；例如 fvg 仍需要已有的 fit/summ 产物。
 def parse_steps(value: str | None, ff: dict[str, Any]) -> list[str]:
     value = value or ff.get("steps", STEPS)
     if isinstance(value, str):
@@ -247,6 +258,8 @@ def root_dir(src: Path, ff: dict[str, Any]) -> Path:
     return rel(src, ff["out"])
 
 
+# 保存本次实际采用的 FFA 配置，便于追溯输出目录、步骤与恢复点。
+# 注意 main 的 dry-run 也会走到这里写 run.yaml，它不是完全只读操作。
 def run_config(
     src: Path,
     original: dict[str, Any],
@@ -268,6 +281,8 @@ def run_config(
     return path
 
 
+# 统一光变契约：二维 [time, flux, flux_error]，至少两个点、有限值、时间严格递增。
+# 此处允许零误差；ICCF 入口的要求更严格（必须 > 0），因此两处可接受的数据集合不同。
 def validate_light_curve(
     data: np.ndarray,
     path: Path,
@@ -307,6 +322,7 @@ def save_light_curve(path: Path, data: np.ndarray) -> None:
     )
 
 
+# total 不做模型重建：将 prepared 中三列原始流量复制为带 _total 后缀的 FFA 输入。
 def prepare_total(src: Path, ff: dict[str, Any], output_dir: Path) -> None:
     source = str(ff.get("source") or src.name)
     component = str(ff["component"]["name"])
@@ -325,6 +341,7 @@ def prepare_total(src: Path, ff: dict[str, Any], output_dir: Path) -> None:
         )
 
 
+# 将 compN 映射到 MICA 文件中的原生分量编号；不按质心大小重新排序。
 def mica_component_index(component: str, mica: dict[str, Any]) -> int:
     match = re.fullmatch(r"comp(\d+)", component.lower())
     if match is None:
@@ -376,6 +393,8 @@ def mica_run_dir(
     return root / name
 
 
+# MICA pline 文件含两个连续块，# n_driver:n_response 头决定块边界。
+# 返回的是驱动参考波段和指定响应分量的重建值及边际误差，不是一组独立观测。
 def load_mica_decomposition(
     path: Path,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -425,6 +444,8 @@ def load_mica_decomposition(
     return driver, response
 
 
+# 将响应重建裁到参考光变覆盖区间；否则 MICA 的外延网格可能改变 FFA 取到的亮/暗端。
+# 边界点由线性插值补齐，误差也做线性插值；这里不传播完整的时域协方差。
 def clip_light_curve_to_support(
     data: np.ndarray,
     support_min: float,
@@ -474,6 +495,8 @@ def clip_light_curve_to_support(
     )
 
 
+# 拼装分量 FFA 的输入：参考波段用 driver_file（若指定），其余波段用对应 pline 分量。
+# “driver”在这里是观测参考波段，并不等于不可见的中心电离连续谱。
 def prepare_mica_component(
     src: Path,
     ff: dict[str, Any],
@@ -518,6 +541,7 @@ def prepare_mica_component(
         driver_data, _ = load_mica_decomposition(driver_path)
         driver_label = f"{driver_path} [driver block]"
 
+    # 参考波段时间区间决定默认的响应支持区间；mica_grid 则保留整个重建网格。
     target_path = output_dir / f"{source}_{driver_band}_{component}.txt"
     save_light_curve(target_path, driver_data)
     support_mode = str(mica.get("response_time_support", "driver")).lower()
@@ -592,6 +616,7 @@ def prepare_mica_component(
     pd.DataFrame(manifest).to_csv(output_dir / "prep_manifest.csv", index=False)
 
 
+# prep_manifest 记录来源、点数、时间窗口和流量幅度，排查混用旧结果时先看这份清单。
 def prepare(src: Path, ff: dict[str, Any]) -> Path:
     component = str(ff["component"]["name"]).lower()
     output_dir = root_dir(src, ff) / "input"
@@ -610,6 +635,7 @@ def prepare(src: Path, ff: dict[str, Any]) -> Path:
     return output_dir
 
 
+# 外部 ffa.ext 负责消光；本封装只传入标准化配置和 source 根目录。
 def run_dered(src: Path, ff: dict[str, Any]) -> Path:
     from ffa.ext import dered
 
@@ -617,6 +643,7 @@ def run_dered(src: Path, ff: dict[str, Any]) -> Path:
     return Path(rows[0][1]["out"]).parent
 
 
+# 这是耗时入口：外部 ffa.disk.fit 建模并采样；静态导读不需要调用它。
 def run_fit(src: Path, ff: dict[str, Any]) -> Path:
     from ffa.disk import fit
 
@@ -635,6 +662,8 @@ def _data_row_count(path: Path) -> int:
         )
 
 
+# 恢复前同时核对二进制 checkpoint 保存计数和两个文本日志的行数，避免从不一致状态续跑。
+# struct 的 @i 使用本机 C int 布局，恢复文件应与产生它的 CDNest/平台版本相容。
 def validate_fit_restart(
     sample_dir: Path,
     restart_file: str | Path,
@@ -681,6 +710,7 @@ def validate_fit_restart(
     return path, count_saves
 
 
+# 断点续跑直接调用 cydnest.CDNestSampler，之后才在 rank 0 做 posterior 后处理。
 def run_fit_restart(src: Path, ff: dict[str, Any], restart_file: Path) -> Path:
     """Resume the configured FFA model from an in-place CDNest checkpoint."""
     import cydnest
@@ -741,6 +771,7 @@ def run_fit_restart(src: Path, ff: dict[str, Any], restart_file: Path) -> Path:
     return sample_dir
 
 
+# summ 汇总 FFA 采样；fvg 把多波段变化关系转换成亮端、暗端、常数分量等后验列。
 def run_summ(src: Path, ff: dict[str, Any]) -> Path:
     from ffa.disk import summ
 
@@ -757,6 +788,7 @@ def run_fvg(src: Path, cfg: Path) -> tuple[Path, Path]:
     return Path(table), posterior
 
 
+# 核消光修正入口由 ffa.nuc 提供；与下面“不做核修正”的 comp0 distance_flux 是不同路径。
 def run_nuc(src: Path, cfg: Path) -> dict[str, Path]:
     from ffa import nuc
 
@@ -768,6 +800,8 @@ def band_key(band: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", str(band)).strip("_")
 
 
+# 优先使用源名/分量/波段数完全匹配的后验文件；回退 glob 只在恰有一个候选时接受。
+# 排查旧产物时仍需核对候选来源，单一文件不等于与当前配置同源。
 def ffa_flux_posterior(src: Path, ff: dict[str, Any]) -> Path:
     source = str(ff.get("source") or src.name)
     component = str(ff["component"]["name"])
@@ -784,6 +818,8 @@ def ffa_flux_posterior(src: Path, ff: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+# 宿主扣除仅定义于 total：每个波段减去 F_Galaxy 后验的中位数。
+# 时间序列误差保持原值；宿主估计的不确定度只另存摘要，没有传播到每个时刻或跨时刻协方差。
 def run_host_sub(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
     """Subtract the FFA host estimate without applying nuclear extinction."""
     source = str(ff.get("source") or src.name)
@@ -855,6 +891,8 @@ def run_host_sub(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
     return {"output_dir": output_dir, "summary": summary_path}
 
 
+# 将 comp0 的 FFA 样本逐行转换成距离公式所需的亮/暗流量和 epsilon。
+# F_Galaxy 在这里被解释为该分量分配到的常数项，不能仅凭列名认定其全是物理宿主星光。
 def run_distance_flux(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
     """Build comp0 bright/faint/epsilon samples with no nuclear correction."""
     source = str(ff.get("source") or src.name)
@@ -878,6 +916,8 @@ def run_distance_flux(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
         missing = [column for column in required if column not in raw]
         if missing:
             raise KeyError(f"missing FFA posterior columns for {band}: {missing}")
+        # 同一后验行中：F_faint = F_Faint - F_constant，F_bright 类似；epsilon=F_faint/F_bright。
+        # 不打乱各波段的样本行，因此保留输入 FFA 后验给出的波段间关联。
         assigned_constant = pd.to_numeric(raw[required[0]], errors="coerce").to_numpy(float)
         faint = pd.to_numeric(raw[required[1]], errors="coerce").to_numpy(float) - assigned_constant
         bright = pd.to_numeric(raw[required[2]], errors="coerce").to_numpy(float) - assigned_constant
@@ -890,6 +930,8 @@ def run_distance_flux(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
         output[f"F_Bright_comp0_{key}"] = bright
         output[f"Delta_F_comp0_{key}"] = delta
         output[f"Epsilon_comp0_{key}"] = epsilon
+        # valid 只用于报告 valid_fraction，下面不会用它删行或重新计算条件分位数。
+        # 下游必须自行决定非正流量、epsilon 越界和非有限值的处理，不能只读中位数。
         valid = (
             np.isfinite(faint)
             & np.isfinite(bright)
@@ -950,6 +992,8 @@ def run_sedfit(src: Path, ff: dict[str, Any]) -> dict[str, Path]:
     return run_sed_models(src, ff, components_csv)
 
 
+# 对每个联合后验样本拟合 ln(y)=ln(N)+alpha*x，其中 x=ln(lambda/pivot)。
+# 权重是逐波段固定的 1/sigma_log^2；这是带对角权重的代数拟合，不是新的 MCMC 或证据积分。
 def _weighted_log_powerlaw(
     log_y: np.ndarray,
     x: np.ndarray,
@@ -970,6 +1014,7 @@ def _weighted_log_powerlaw(
     weight = 1.0 / np.square(sigma_log)
     weight_sum = float(np.sum(weight))
     xbar = float(np.sum(weight * x) / weight_sum)
+    # 自由斜率是加权 Cov(x, ln y)/Var(x)；固定斜率时只求归一化 ln(N)。
     if alpha is None:
         ybar = np.sum(log_y * weight[None, :], axis=1) / weight_sum
         denom = float(np.sum(weight * np.square(x - xbar)))
@@ -995,6 +1040,8 @@ def _percentiles(values: np.ndarray) -> tuple[float, float, float]:
     return tuple(float(value) for value in np.percentile(values, [16.0, 50.0, 84.0]))
 
 
+# RMS SED 用 y=lambda*R_lambda，而不是平均总流量；一行同时含所有波段的同一次 FFA 抽样。
+# 全波段联合有效掩码保留行对应关系，但正值筛选本身会条件化输入样本集合。
 def _joint_rms_sed_samples(
     posterior: pd.DataFrame,
     bands: list[str],
@@ -1019,6 +1066,7 @@ def _joint_rms_sed_samples(
     return samples[good]
 
 
+# 可信带逐样本同时使用 normalization 与 alpha，保留两者相关性，最后才沿样本方向取分位数。
 def _powerlaw_posterior_envelope(
     normalizations: np.ndarray,
     slopes: np.ndarray,
@@ -1085,6 +1133,9 @@ def _sed_plot_text(source: str, component: str) -> tuple[str, str]:
     return "", f"FFA {_component_display_name(component)} RMS amplitude"
 
 
+# SED 后处理比较 lambda*R_lambda 的固定/自由幂律，不调用 FFA 拟合。
+# beta=(alpha+4)/2、gamma=alpha+4 是本实现采用的模型换算，不是直接测出的延迟指数。
+# chi2 采用边际误差的对角权重；联合样本传播并不等于拟合时使用完整协方差矩阵。
 def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[str, Path]:
     """Fit disk SED shapes to the joint FFA RMS-amplitude posterior."""
     import matplotlib.pyplot as plt
@@ -1282,6 +1333,7 @@ def run_sed_models(src: Path, ff: dict[str, Any], components_csv: Path) -> dict[
     }
 
 
+# 命令行分三路：普通 total 配置、旧 posterior branch、指定 stage 的原生 MICA 分量。
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -1326,6 +1378,7 @@ def main() -> None:
     if args.fit_restart is not None and "fit" not in steps:
         parser.error("--fit-restart requires the fit step")
 
+    # rank 0 先落地 run.yaml 后所有进程同步；因此 --dry-run 仍可能创建输出目录和配置文件。
     if RANK == 0:
         normalized = run_config(
             src, config, ff, steps, fit_restart=args.fit_restart
@@ -1341,6 +1394,7 @@ def main() -> None:
     if args.dry_run:
         return
 
+    # 显式阶段分发。fit 必须所有 MPI 进程共同进入；其他阶段避免多进程同时覆盖同一文件。
     for step in steps:
         if step == "prep":
             if RANK == 0:

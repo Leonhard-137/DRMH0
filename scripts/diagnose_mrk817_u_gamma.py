@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Reproduce diagnostics for the anomalous Mrk 817 U-band two-Gamma fit."""
 
+# 固定 Mrk817 历史归档与本地 run，整理 U 异常、两分量参数和延迟分量诊断。
+# 不拟合新 MICA 模型，但会重建核形状并覆盖诊断 CSV 和 SQLite 表；需要从项目根目录运行。
 from __future__ import annotations
 
 import csv
@@ -32,6 +34,7 @@ def parse_evidence(text: str) -> float:
     return float(text.splitlines()[1].split()[1])
 
 
+# Gamma 质心 c+2w，Gaussian 质心 c；f 按核面积归一，总质心由面积加权。
 def posterior_quantities(sample: np.ndarray, transfer_function: str):
     amplitude0 = np.exp(sample[:, 4])
     amplitude1 = np.exp(sample[:, 7])
@@ -195,6 +198,7 @@ def write_band_comparison(archive: zipfile.ZipFile) -> None:
         writer.writerows(rows)
 
 
+# 这里用 pall 的后一半行当响应块，隐含两个重建块行数相同；与按计数头切块的生产读取器不同。
 def interpolated_fit_metrics(run: Path, observed: np.ndarray) -> dict[str, float]:
     reconstruction = np.loadtxt(run / "data" / "pall.txt_2")
     response_reconstruction = reconstruction[len(reconstruction) // 2 :]
@@ -282,6 +286,7 @@ def write_u_model_comparison() -> None:
         writer.writerows(rows)
 
 
+# 按 tau0 分箱比较保存抽样中的 log-likelihood；箱内最大值不是重新优化出的严格 profile likelihood。
 def write_u_likelihood_profile() -> None:
     run = (
         ROOT
@@ -363,6 +368,8 @@ def write_u_kernel_location_summary() -> None:
         writer.writerows(rows)
 
 
+# broad_dce 是代码定义的宽松参数盒；落入盒内不证明是漫连续谱，概率分母是所有原始抽样。
+# 点对点中位核的 FWHM 与每个抽样核 FWHM 的中位数不是同一统计量。
 def write_gamma_component1_dce_summary(archive: zipfile.ZipFile) -> None:
     """Summarize whether the delayed Gamma component is DCE-like by band.
 
@@ -609,6 +616,7 @@ def sqlite_value(value: str):
             return value
 
 
+# 将本次 CSV 再装入诊断 SQLite，DROP TABLE 后重建同名表；它是产物缓存，不是输入数据库。
 def write_sqlite_snapshot() -> None:
     database = OUTPUT / "Mrk817_U_gamma_diagnostic.sqlite"
     table_files = {

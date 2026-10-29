@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Compare B-band two-Gamma posterior branches split by component-0 FWHM."""
 
+# 读取旧 Gamma ZIP 的 B 波段，按原生 comp0 FWHM 阈值拆窄/宽条件分支。
+# 先要求 tau0<tau1，再分 FWHM<threshold 与 >threshold；恰等于阈值的样本不进任一分支。
 from __future__ import annotations
 
 import argparse
@@ -23,6 +25,7 @@ MEMBER = (
 FWHM_PER_W = 2.446386
 
 
+# c 是 Gamma 起点，mode=c+w，centroid=c+2w；先从 log 参数取指数再做区域筛选。
 def load(archive_path: Path, threshold: float) -> tuple[
     dict[str, np.ndarray], dict[str, np.ndarray], dict[str, int]
 ]:

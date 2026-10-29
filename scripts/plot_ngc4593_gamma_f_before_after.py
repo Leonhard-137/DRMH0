@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot NGC 4593 Gamma component-area fraction before/after tau_short > 0."""
 
+# 固定 NGC4593：带权 sample1d 中按质心定义短分量，比较正质心筛选前后面积占比。
+# 输入权重来自 weights.txt 第三列；这里不是原生编号 comp0 的无条件分布。
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -13,6 +15,7 @@ BANDS = ("W2", "M2", "W1", "U", "B", "V")
 TARGETS = BANDS[1:]
 
 
+# 用 tau0<=tau1 选择哪个原生分量是短分量，再同步选择 f0 或1-f0；最后筛 tau_short>0。
 def load_band(band: str):
     data_dir = ROOT / f"run_W2_to_{band}_2comp_gamma" / "data"
     sample = np.loadtxt(data_dir / "sample1d.txt_2", comments="#")

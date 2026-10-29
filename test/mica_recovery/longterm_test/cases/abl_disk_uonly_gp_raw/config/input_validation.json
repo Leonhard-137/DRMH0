@@ -1,0 +1,14 @@
+{
+  "W2_input_byte_identical": true,
+  "U_times_errors_unchanged": true,
+  "disk_S_noise_reused_exactly": true,
+  "source_minus_new_equals_saved_BLR": true,
+  "same_MICA_configuration": true,
+  "U_flux_range": [
+    0.69987091722216,
+    1.2651350213919998
+  ],
+  "source_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_blr_uonly_gp_raw",
+  "target_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_uonly_gp_raw",
+  "config": "/home/leonhard/sci001/test/mica_recovery/longterm_test/experiment_disk_uonly_gp_raw.yaml"
+}

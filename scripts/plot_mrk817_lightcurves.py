@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot the Mrk817 multi-band light curves with error bars."""
 
+# 读取固定 Mrk817 原始 CSV 和 band_list，在 2x5 画布上画多波段光变与误差。
+# mJy 是本图硬编码的纵轴单位，代码不做单位换算；输出到 Mrk817 源目录。
 from __future__ import annotations
 
 from pathlib import Path

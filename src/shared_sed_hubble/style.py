@@ -1,3 +1,4 @@
+# 图形常量与标注工具；H0 参考带、源名、空心标记均为显示信息，不进入先验或似然。
 """Stable scientific figure style for shared-SED distance and Hubble results.
 
 Reference bands are display metadata only. They are never inference priors.
@@ -41,6 +42,7 @@ SOURCE_LABEL_OFFSETS = {
 DEFAULT_LABEL_OFFSET = (7, 8)
 
 
+# 描述外部 H0 参考带的数值/风格，仅由绘图消费。
 class ReferenceBand(NamedTuple):
     name: str
     mean: float
@@ -56,6 +58,7 @@ H0_REFERENCES = (
 )
 
 
+# 集中设置字体、边框和刻度；调用方可用 rc_context 限制全局影响。
 def apply_style():
     """Apply the accepted serif, four-sided-axis figure defaults."""
     plt.rcParams.update({
@@ -72,6 +75,7 @@ def apply_style():
     })
 
 
+# 显示四边框和向内刻度，不添加数据。
 def apply_frame(ax):
     """Show all four spines and inward major/minor ticks without a grid."""
     ax.grid(False)
@@ -82,11 +86,13 @@ def apply_frame(ax):
     ax.tick_params(which="both", direction="in", top=True, right=True)
 
 
+# Mrk509 空心符号沿用上游 ESS 警告的显示约定。
 def marker_face(source: str) -> str:
     """Keep the accepted hollow Mrk509 marker for its upstream ESS warning."""
     return "white" if source in HOLLOW_SOURCES else INK
 
 
+# 将内部目录名转成人可读源名，保留原始数据标识在表中。
 def source_label(source: str) -> str:
     base = source.split("_", 1)[0]
     if base == "F9":

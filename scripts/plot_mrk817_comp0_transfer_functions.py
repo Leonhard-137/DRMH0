@@ -7,6 +7,8 @@ The component transfer functions are reconstructed directly from
 not by the Gaussian/Gamma component number; it contains the total response.
 """
 
+# 由 MICA 参数后验重建 Mrk817 原生 comp0 的 Gaussian/Gamma 响应核。
+# tranfunc_0_1 的 0/1 是光变编号而不是组件编号，因此这里必须从组件参数构造核。
 from __future__ import annotations
 
 import argparse
@@ -56,6 +58,7 @@ def run_dir(root: Path, band: str, model: str) -> Path:
     return root / f"run_UVW2_to_{band}_2comp_{model.lower()}"
 
 
+# 用 para_names_line 映射列号，避免把固定列假设带入不同参数布局。
 def read_component0_samples(run: Path) -> tuple[np.ndarray, dict[str, int]]:
     data = run / "data"
     sample = np.loadtxt(data / "posterior_sample1d.txt_2", comments="#")
@@ -95,6 +98,8 @@ def component0_grid_bounds(center: np.ndarray, sigma: np.ndarray, model: str) ->
     return float(lower), float(upper)
 
 
+# Gaussian 为 A/(sqrt(2pi)w)*exp[-(t-c)^2/(2w^2)]；Gamma 为 A*(t-c)/w^2*exp[-(t-c)/w]。
+# A 是面积，Gamma 起点前为零；逐时刻取后验分位数，与用参数中位数生成单个核不同。
 def reconstruct_component0(
     sample: np.ndarray,
     names: dict[str, int],

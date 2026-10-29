@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot Mrk 817 Gamma component-0 posteriors after requiring c0 > 0."""
 
+# 在旧 Gamma ZIP 的 tau0<tau1 子集中，进一步要求原生起点 c0>0，比较筛前后参数。
+# c0>0 比质心 tau0=c0+2w0>0 更强；它是形状条件，不是仅要求正延迟。
 from __future__ import annotations
 
 import argparse
@@ -23,6 +25,8 @@ DEFAULT_OUTPUT = Path(
 BANDS = ("UVM2", "UVW1", "U", "B", "V")
 
 
+# 列4/6、7/9分别存 logA/logw；取指数后得到正面积和尺度，tau=c+2w。
+# 后续掩码保留原生 tau0<tau1，不逐样本重标记；区域比例必须说明分母来自原始还是已筛样本。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     member = (
         f"2comp/run_UVW2_to_{band}_2comp_gamma/data/"

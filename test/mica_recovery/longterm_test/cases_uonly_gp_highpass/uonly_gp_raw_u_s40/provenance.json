@@ -1,0 +1,12 @@
+{
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_blr_uonly_gp_raw",
+  "sigma_days": 40,
+  "driver_unchanged": true,
+  "error_mode": "original",
+  "filter": "original - Gaussian weighted trend + original mean",
+  "rms_retained": {
+    "independent": 0.535196248195558,
+    "disk": 0.7715075320245124,
+    "blr": 0.7707530034722964
+  }
+}

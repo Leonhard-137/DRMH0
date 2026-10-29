@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Serial full-posterior reconstruction and SED fitting for Mrk817 free100."""
+# 耗时生产入口：顺序处理固定 Mrk817 free100 的 host/raw 两组重建与 FFA/SED。
+# 会启动 decompose_mica_branches 和两 MPI rank 的 run_ffa；学习注释时不要执行此文件。
 from __future__ import annotations
 
 import argparse
@@ -43,6 +45,7 @@ def sed_complete(group: str) -> bool:
     return all(path.is_file() and path.stat().st_size > 0 for path in sed_outputs(group))
 
 
+# 构造真实子进程命令：full 分支重建后进入 prep,dered,fit,summ,fvg,sedfit，包含耗时 fit。
 def commands(group: str) -> tuple[list[str], list[str]]:
     config = str(SOURCE / "config" / f"free100_{group}_sed.yaml")
     decompose = [sys.executable, "-B", str(ROOT / "src/decompose_mica_branches.py"),
@@ -68,6 +71,7 @@ def validate_host_controller(args: list[str], pid: int) -> None:
         raise RuntimeError(f"PID {pid} is not the expected free100 host decomposition controller")
 
 
+# 等待指定 PID 前核对命令行身份，避免把无关进程误当预期重建控制器。
 def wait_host_controller(pid: int) -> None:
     while True:
         args = controller_cmdline(pid)
@@ -87,6 +91,7 @@ def validate_decomposition(group: str) -> None:
     print(f"Validated {group} reconstruction: all five bands.", flush=True)
 
 
+# 已有完整 SED 则跳过；存在非空但未完成的 FFA sample 则拒绝自动覆盖/恢复，需先检查其来源。
 def run_group(group: str, wait_pid: int | None = None) -> None:
     if sed_complete(group):
         print(f"Skip {group}: all core SED outputs already exist.", flush=True)

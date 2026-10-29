@@ -1,0 +1,283 @@
+{
+  "created_utc": "2026-10-22T02:57:01.374489+00:00",
+  "reviewer_scope": "Independent read-only mathematical review and synthetic tests; no GP likelihood evaluated.",
+  "source_files": {
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_qmc/qmc_importance.py": "2f60bee73af4584695eef4c82bf6a9ef171fcc1f8a88491308400b5cc1933b2b",
+    "/home/leonhard/sci001/test/mica_slowgp/staged_importance_qmc/importance.py": "0d225a24a956545a070aebead19e45b9b5eb04a79817e515e38c893c781042d4"
+  },
+  "tests": [
+    {
+      "name": "hand_calculated_scramble_covariance_and_ratio",
+      "passed": true,
+      "detail": {
+        "evidence": 2.5,
+        "evidence_variance": 0.4166666666666667,
+        "ratio": 1.7,
+        "ratio_variance": 0.06266666666666666,
+        "expected_covariance_identity": "Cov(Zmean,Ymean)=25/24; Var(Ymean)=131/48; includes ratio numerator-denominator covariance"
+      }
+    },
+    {
+      "name": "splitting_rows_does_not_reduce_MCSE",
+      "passed": true,
+      "detail": {
+        "row_multiplier": 17,
+        "MCSE_unchanged": true,
+        "meaning": "Rows inside a scramble do not become independent replicates when split."
+      }
+    },
+    {
+      "name": "Student_t_df_shape_mapping_and_defensive_logistic",
+      "passed": true,
+      "detail": {
+        "expected_point": [
+          2.3,
+          -0.9747727084867521
+        ],
+        "scale_matrix_is_t_shape": true,
+        "mapping": "z=mu+L*N/sqrt(chi2(df)/df); Cov(z)=df/(df-2)*L L^T"
+      }
+    },
+    {
+      "name": "full_mixture_density_against_scipy_distributions",
+      "passed": true,
+      "detail": {
+        "max_logdensity_difference": 8.881784197001252e-16,
+        "denominator": "sum of all full alpha_k q_k including defensive prior"
+      }
+    },
+    {
+      "name": "alpha_over_N_over_R_and_full_q_cancel_exactly",
+      "passed": true,
+      "detail": {
+        "rows": 416,
+        "evidence": 1.0,
+        "standard_error": 5.551115123125786e-17,
+        "scientific_GP_evaluations": 0
+      }
+    },
+    {
+      "name": "fail_fast_endpoints_and_nonreused_seed_hierarchy",
+      "passed": true,
+      "detail": {
+        "endpoints_rejected": [
+          0.0,
+          1.0
+        ],
+        "reproducible_same_root": true,
+        "different_stratum_not_reused": true,
+        "unique_component_scramble_keys": 12,
+        "qualification": "PRNG stream construction and reproducibility checked, not a statistical proof of independence."
+      }
+    },
+    {
+      "name": "rho_combination_of_hand_specified_scramble_vectors",
+      "passed": true,
+      "detail": {
+        "evidence": 2.5,
+        "ratio": 0.7625,
+        "ratio_variance": 0.03487760416666667,
+        "meaning": "rho inserted once before corresponding independent r vectors are summed; all layers retained"
+      }
+    }
+  ],
+  "tests_passed": 7,
+  "tests_failed": 0,
+  "actual_budgets": [
+    {
+      "stratum_id": 0,
+      "proposal_path": "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_00.npz",
+      "component_probabilities": [
+        0.04952424976053178,
+        0.06163131384223317,
+        0.04196723744828806,
+        0.013439430148341537,
+        0.024127985994169467,
+        0.05348783340782732,
+        0.03468286154918091,
+        0.06093037056921051,
+        0.0083756955159321,
+        0.06238280381649532,
+        0.012202002637818071,
+        0.05224821530997168,
+        0.06839297363287289,
+        0.0592288644076151,
+        0.030690908708612616,
+        0.030738718407739417,
+        0.03139004124594,
+        0.0030733230441700693,
+        0.022279242422465626,
+        0.034121167396624935,
+        0.08066996384789174,
+        0.05277340805246914,
+        0.009901323418071099,
+        0.05174006541552734,
+        0.05
+      ],
+      "component_counts_per_scramble": [
+        128,
+        128,
+        128,
+        32,
+        64,
+        128,
+        128,
+        128,
+        32,
+        128,
+        32,
+        128,
+        256,
+        128,
+        64,
+        64,
+        128,
+        8,
+        64,
+        128,
+        256,
+        128,
+        32,
+        128,
+        128
+      ],
+      "rows_per_scramble": 2696,
+      "scrambles": 8,
+      "total_rows": 21568
+    },
+    {
+      "stratum_id": 1,
+      "proposal_path": "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_01.npz",
+      "component_probabilities": [
+        0.005240455880399521,
+        0.03372123563113875,
+        0.03878150652889622,
+        0.04853218279214293,
+        0.012031823653928722,
+        0.005205690735574771,
+        0.07737026616876688,
+        0.05307415062799892,
+        0.059237464146812725,
+        0.018554899525804955,
+        0.08214865330941533,
+        0.04110167099912029,
+        0.041733286563425405,
+        0.06135309133200249,
+        0.12914281370968422,
+        0.037600020831359715,
+        0.005966077632562961,
+        0.01732190540845128,
+        0.013984760299143492,
+        0.06733424217857462,
+        0.023787279899429605,
+        0.04458412736987876,
+        0.012551424926278615,
+        0.01964096984920882,
+        0.05
+      ],
+      "component_counts_per_scramble": [
+        16,
+        128,
+        128,
+        128,
+        32,
+        16,
+        256,
+        128,
+        128,
+        64,
+        256,
+        128,
+        128,
+        128,
+        512,
+        128,
+        16,
+        64,
+        32,
+        256,
+        64,
+        128,
+        32,
+        64,
+        128
+      ],
+      "rows_per_scramble": 3088,
+      "scrambles": 8,
+      "total_rows": 24704
+    },
+    {
+      "stratum_id": 2,
+      "proposal_path": "/home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/artifacts/regularized/stratum_02.npz",
+      "component_probabilities": [
+        0.06105590339998652,
+        0.026415329397437615,
+        0.021613695942693807,
+        0.05959818314906977,
+        0.016334759887750166,
+        0.0061812575383934955,
+        0.04944665177681211,
+        0.02774414795375873,
+        0.048058035171954415,
+        0.0838783088443844,
+        0.05419957112612191,
+        0.020474155811637078,
+        0.007213172971517917,
+        0.013244051803109062,
+        0.012318728978800236,
+        0.10814597487155157,
+        0.09239806529923482,
+        0.017631240142821653,
+        0.06206970465248526,
+        0.06363916918828946,
+        0.0118486823622035,
+        0.0600106025893965,
+        0.0096235668825547,
+        0.01685704025803534,
+        0.05
+      ],
+      "component_counts_per_scramble": [
+        128,
+        64,
+        64,
+        128,
+        64,
+        16,
+        128,
+        64,
+        128,
+        256,
+        128,
+        64,
+        16,
+        32,
+        32,
+        256,
+        256,
+        64,
+        128,
+        256,
+        32,
+        128,
+        32,
+        64,
+        128
+      ],
+      "rows_per_scramble": 2656,
+      "scrambles": 8,
+      "total_rows": 21248
+    }
+  ],
+  "total_scientific_rows_planned": 67520,
+  "blocking_findings": [],
+  "conclusion": "Mathematical implementation is suitable for one new independent scientific pilot, subject to recording the frozen proposal/settings and checking actual wrapper outputs. This is not a formal stability-gate pass.",
+  "cautions": [
+    "Eight independent scramble integrals provide only seven covariance degrees of freedom; reported randomization error can be noisy.",
+    "Ratio estimates are self-normalized and delta-method errors are approximate; missing rare contributions can make apparent precision misleading.",
+    "Target_N is nominal allocation, not actual row budget; power-of-two rounding and minimum eight per component increase total calls.",
+    "Natural expit saturation must use the explicitly recorded policy; raw Sobol 0/1 endpoints fail without reseeding or replacement.",
+    "Sample rows within each scramble are not iid; Kish is descriptive only."
+  ],
+  "scientific_likelihood_calls_in_review": 0,
+  "source_edited": false
+}

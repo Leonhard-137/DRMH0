@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# 后处理分支：总光 FVG 颜色 → 核消光 E(B−V) → 放大已有 comp0 测距通量 → 重算距离/H0。
+# 不调用 MICA 或 FFA，但默认会调用 disk_distance 的 H0 采样；no_h0_mcmc 可跳过。
+# dust_extinction 提供 SMC/F99 消光曲线，Astropy 单位确保波长按 Å 传入，PyYAML 保存参数来源。
+# 总光 FVG 与 comp0 通量来自不同阶段，此处采用独立抽样传播，并非同一联合后验。
 """Apply total-light FVG nuclear extinction to an existing comp0 H0 posterior.
 
 This is deliberately a post-processing program.  It never calls MICA or the
@@ -37,11 +41,13 @@ DEFAULT_RV = 2.71
 DEFAULT_SEED = 12345
 
 
+# 读配置，不执行任何拟合。
 def read_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
 
 
+# 相对源目录锚定项目根。
 def source_dir(path: Path) -> Path:
     path = path.expanduser()
     if path.is_absolute():
@@ -49,11 +55,13 @@ def source_dir(path: Path) -> Path:
     return (Path(__file__).resolve().parents[1] / path).resolve()
 
 
+# 源内相对路径解析。
 def rel(root: Path, path: str | Path) -> Path:
     path = Path(path).expanduser()
     return path.resolve() if path.is_absolute() else (root / path).resolve()
 
 
+# 用解析后的路径判断包含关系。
 def within(path: Path, parent: Path) -> bool:
     """Return whether *path* is *parent* or one of its descendants."""
     try:
@@ -63,6 +71,7 @@ def within(path: Path, parent: Path) -> bool:
     return True
 
 
+# 拒绝与任何输入/原结果重叠或非空输出目录，保留未经核消光修正的基线。
 def validate_output_root(
     output_root: Path,
     *,
@@ -92,10 +101,12 @@ def validate_output_root(
         )
 
 
+# 将波段名规范为列名片段。
 def key(band: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", str(band)).strip("_")
 
 
+# 返回 16/50/84% 分位；这里与主距离代码的 15.865/84.135% 略有不同。
 def q68(values: np.ndarray) -> tuple[float, float, float]:
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]
@@ -104,6 +115,7 @@ def q68(values: np.ndarray) -> tuple[float, float, float]:
     return tuple(float(value) for value in np.percentile(values, [16.0, 50.0, 84.0]))
 
 
+# dust_extinction 返回 Aλ/A_V，乘 R_V 后才是 k(λ)=Aλ/E(B−V)；SMC 曲线使用自身 R_V。
 def extinction_k(
     wavelengths: np.ndarray,
     *,
@@ -127,6 +139,9 @@ def extinction_k(
     return values, effective_rv
 
 
+# 假设内禀 Fλ∝λ^(-slope)，由蓝/红 FVG 振幅比与内禀比求 ΔA，再除 k_blue−k_red。
+# rest_wavelengths 决定消光曲线取 λ_obs/(1+z) 还是旧观测波长；必须在结果中保留此约定。
+# 默认把负 E(B−V) 样本压到零，产生零点概率质量；这是模型选择，不是无偏去噪。
 def infer_fvg_ebv(
     posterior: pd.DataFrame,
     wavelengths: dict[str, float],
@@ -200,6 +215,7 @@ def infer_fvg_ebv(
     return ebv_raw, ebv_used, summary
 
 
+# 解析目标测距用亮态、暗态、差分和 ε 列，防止把总光/comp0 混同。
 def distance_flux_columns(cfg: dict[str, Any], band: str) -> dict[str, str]:
     """Resolve current comp0 distance-flux columns without changing epsilon."""
     bright, epsilon = disk_distance.distance_flux_columns(cfg, band)
@@ -213,6 +229,9 @@ def distance_flux_columns(cfg: dict[str, Any], band: str) -> dict[str, str]:
     }
 
 
+# 每目标行独立选一个总光 E(B−V) 样本，同一行的所有波段共享这个消光样本。
+# 各波段 Fbright、Ffaint、ΔF 同乘 10^(0.4 kλ E)，ε=Ffaint/Fbright 应保持不变。
+# 因此给定 τ、ε 时 D 按修正因子的 −1/2 次方变化；总光与 comp0 的潜在相关性未传播。
 def apply_nuclear_extinction(
     target: pd.DataFrame,
     ebv_raw: np.ndarray,
@@ -299,6 +318,7 @@ def apply_nuclear_extinction(
     return corrected, pd.DataFrame(summary_rows)
 
 
+# 定位后验分支/阶段的原结果根。
 def branch_root(
     source: Path,
     cfg: dict[str, Any],
@@ -313,6 +333,7 @@ def branch_root(
     return root / f"{ncomp}comp" / "result" / branch_result_relative_dir(mica, branch_id)
 
 
+# 寻找已完成的总光 FVG 通量后验；不自动触发 FFA。
 def find_total_fvg_posterior(source: Path, cfg: dict[str, Any]) -> Path:
     ff = dict(cfg.get("fflux", {}) or {})
     analysis = rel(source, ff.get("out", "fflux")) / "analysis"
@@ -332,6 +353,7 @@ def find_total_fvg_posterior(source: Path, cfg: dict[str, Any]) -> Path:
     return hits[0]
 
 
+# 复制配置并为每种盘模型强制绑定修正通量及原延迟，避免模型级路径绕回旧通量。
 def h0_config(
     cfg: dict[str, Any],
     *,
@@ -377,6 +399,7 @@ def h0_config(
     return result
 
 
+# 按模型名一对一合并修正前后 H0 摘要，写偏移和比例，不重做任何拟合。
 def write_h0_comparison(input_root: Path, output_root: Path) -> Path | None:
     baseline_path = input_root / "h0" / "hubble_model_summary.csv"
     corrected_path = output_root / "h0" / "hubble_model_summary.csv"
@@ -395,6 +418,7 @@ def write_h0_comparison(input_root: Path, output_root: Path) -> Path | None:
     return path
 
 
+# 检查隔离输出，生成消光/通量后验和来源 YAML，再调用 disk_distance 重算距离及可选 H0。
 def run(args: argparse.Namespace) -> dict[str, Path]:
     source = source_dir(args.source)
     config_path = rel(source, args.config or "config/source_config.yaml")
@@ -547,6 +571,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     }
 
 
+# 后处理命令行入口；选择蓝红波段、消光律、截断、曲线参考系和已有输入路径。
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="FVG nuclear-extinction and H0 post-processing; never runs MICA/FFA"

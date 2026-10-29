@@ -70,6 +70,8 @@ DECOMPOSITION_SETTING_KEYS = (
 )
 
 
+# ctypes 字段顺序和 C 类型必须与已安装 CDNest 结构一致；这不是普通 Python 配置类。
+# 改动第三方结构布局后需重新核对，否则直接写字段可能写错原生内存。
 class DNestOptions(ctypes.Structure):
     """ctypes mirror of MICA2/cdnest/dnest.h::DNestOptions."""
 
@@ -96,6 +98,7 @@ class DNestOptions(ctypes.Structure):
     ]
 
 
+# 定位已安装的 pymica 扩展并检查所需 C 符号；仍依赖与当前原生 ABI 一致的结构定义。
 def _native_mica_library(pymica_module):
     """Load the already-imported pymica extension and validate required symbols."""
     native_module = sys.modules.get("pymica.pymica")
@@ -122,6 +125,7 @@ def _native_mica_library(pymica_module):
     return library
 
 
+# C 字符缓冲区必须预留结尾 NUL；先检查编码后的字节长度，再写原生全局变量。
 def _set_native_string(library, symbol: str, value: str, capacity: int) -> None:
     encoded = os.fsencode(value)
     if len(encoded) >= capacity:
@@ -130,6 +134,9 @@ def _set_native_string(library, symbol: str, value: str, capacity: int) -> None:
     native.value = encoded
 
 
+# 使用已有条件后验做总光变/分量重建，不重新做 nested sampling。
+# 先以 parameter-name-only 模式初始化参数布局，检查列数后指向 staged posterior 文件。
+# 重建仍调用原生计算，可能耗时；本次代码导读不需要执行该入口。
 def decompose_conditional_posterior(
     pymica_module,
     ncomp: int,
@@ -196,12 +203,15 @@ def decompose_conditional_posterior(
             library.end_run()
 
 
+# 系统重采样：在累计权重 CDF 上放置间隔 1/N、共同随机偏移的 N 个点。
+# 返回重复样本索引是正常现象；复制 3000 行不意味着获得 3000 个独立约束。
 def systematic_resample(weights, size: int, rng: np.random.Generator) -> np.ndarray:
     """Return low-variance resampling indices for normalized weights."""
     weights = normalized_weights(weights)
     size = int(size)
     if size < 1:
         raise ValueError("resampling size must be positive")
+    # 共同随机偏移 u∈[0,1)，采样点为 (u+j)/N；相较独立抽样减少重采样波动。
     positions = (rng.random() + np.arange(size, dtype=float)) / size
     cumulative = np.cumsum(weights)
     cumulative[-1] = 1.0
@@ -219,6 +229,7 @@ def file_digest(path: Path) -> str | None:
     return digest.hexdigest()
 
 
+# 只序列化影响原生重建的配置字段，并带算法版本，用于判断旧分解是否可复用。
 def decomposition_settings(fit: dict) -> str:
     """Canonical settings fingerprint for safe output reuse."""
     settings = {
@@ -242,6 +253,9 @@ def branch_run_dir(source_dir: Path, fit: dict, branch_id: str, band: str) -> Pa
     return branch_root(source_dir, fit, branch_id) / "decomposition" / run_name(fit, band)
 
 
+# 读取完整带权原始后验，按同一标签规则筛分支，再系统重采样为原生需要的等权样本。
+# 原始样本 ID、原始/条件权重与是否换标号保存到映射表；不覆盖父运行原始后验。
+# 在独立分支目录复制输入并记录设置/内容哈希，供后续重建及 --skip-complete 核对。
 def stage_run(
     source_dir: Path,
     fit: dict,
@@ -290,6 +304,7 @@ def stage_run(
     ) % (2**32 - 1)
     rng = np.random.default_rng(seed)
     selected_positions = systematic_resample(conditional_weights, nsamp, rng)
+    # 保留回原始 sample1d 行号的映射，重复 ID 表示重采样重复，而不是新增独立后验。
     raw_ids = selected_ids[selected_positions]
     resampled = sample[raw_ids]
 
@@ -337,6 +352,7 @@ def stage_run(
     current_settings = decomposition_settings(fit)
     settings_path.write_text(current_settings, encoding="utf-8")
     new_digests = {name: file_digest(path) for name, path in tracked_paths.items()}
+    # 只有输入文件、条件后验和重建设置全部相同，才允许后面复用已有分解产物。
     staged_inputs_unchanged = (
         old_settings == current_settings
         and all(old_digests[name] == new_digests[name] for name in tracked_paths)
@@ -371,6 +387,8 @@ def stage_run(
     }
 
 
+# 检查 # n_driver:n_response 头、三列总行数、有限值及非负误差。
+# 这是产物形状检查，不能据此判定分解是否物理唯一或可信。
 def validate_decomposition_file(path: Path) -> tuple[int, int, int]:
     """Return driver, response, and total row counts after strict validation."""
     if not path.is_file():
@@ -399,6 +417,7 @@ def validate_decomposition_file(path: Path) -> tuple[int, int, int]:
     return counts[0], counts[1], len(data)
 
 
+# 总重建 pall 和每个 pline 分量都必须存在并通过结构检查；可选要求非空分解 PDF。
 def validate_run_outputs(target: Path, ncomp: int, require_plot: bool) -> dict:
     """Validate all machine- and human-readable outputs for one run."""
     result = {}
@@ -436,6 +455,7 @@ def posterior_column_count(path: Path) -> int:
     raise ValueError(f"posterior file contains no draws: {path}")
 
 
+# 同时写便于阅读的 CSV 与完整 manifest，保留分支质量、权重 ESS、抽取数和复用状态。
 def write_decomposition_summaries(path: Path, rows: list[dict]) -> None:
     """Write a compact human CSV and a complete machine-readable manifest."""
     frame = pd.DataFrame(rows)
@@ -467,6 +487,8 @@ def config_path(source_dir: Path, path: Path | None = None) -> Path:
     return path.resolve() if path.is_absolute() else (source_dir / path).resolve()
 
 
+# MPI worker 在已准备的分支目录调用 gmodel setup 与原生条件后验重建，然后绘图。
+# 当前工作路径是单驱动/单响应的 gmodel；不要据此推断已支持 mmap 混合核或联合响应模型。
 def worker(
     source_dir: Path,
     branch_id: str,
@@ -526,6 +548,8 @@ def worker(
         raise RuntimeError(plot_error)
 
 
+# 按波段启动原生 MPI 重建，每次日志写入固定 band_decompose.log。
+# 这里是实际计算入口；--stage-only 才只准备样本文件而不启动 worker。
 def launch_group(
     source_dir: Path,
     fit: dict,
@@ -603,6 +627,8 @@ def batches(values: list[str], size: int):
         yield values[start : start + size]
 
 
+# 当前控制器固定解析 r1；没有通用 --stage 参数，其他模型只能由独立配置中的 r1 指定。
+# 先准备每个分支，再按输入/设置是否相同和产物完整性决定重建或复用。
 def controller(
     source_dir: Path,
     branch_ids: list[str],
@@ -678,6 +704,7 @@ def controller(
         print(f"validated: {branch_id} -> {summary_path}")
 
 
+# CLI 必须选一个分支或全部分支；--stage-only 仍会写 staging 与摘要文件，并非纯只读。
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_dir", type=Path)

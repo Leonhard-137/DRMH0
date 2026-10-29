@@ -1,32 +1,84 @@
-# Source-only repository: ignore every path unless explicitly allowed below.
+# Source-only repository: data, numerical arrays, figures and runtime products stay local.
+# Traverse only the four maintained trees; files are ignored unless allowed below.
 *
+!/notes/**/
+!/scripts/**/
+!/src/**/
+!/test/**/
 
-# Keep the repository policy itself.
+# Source code, configuration and research documentation.
+!*.py
+!*.pyx
+!*.pxd
+!*.sh
+!*.c
+!*.h
+!*.cpp
+!*.hpp
+!*.f
+!*.f90
+!*.md
+!*.rst
+!*.ipynb
+!*.yaml
+!*.yml
+!*.toml
+!*.ini
+!*.cfg
+!*.tex
+!*.bib
+!*.sty
+!*.cls
+!*.mplstyle
+!Makefile
+!CMakeLists.txt
+!requirements*.txt
+!.latexmkrc
 !.gitignore
+!**/config/*.json
+!**/config.json
+!**/*_config.json
 
-# Public source and documentation selected for this repository.
-!main.py
-!joint_hubble_config.yaml
-!notes/
-!notes/**
-!scripts/
-!scripts/**
-!src/
-!src/**
-!test/
-!test/**
+# JSON research/configuration records (not general JSON result files).
+!/test/Temperature_mapping/**/outputs/lag_run_contract.json
+!/test/Temperature_mapping/sample10/physical_parameters.json
+!/test/mica_slowgp/staged_importance*/settings.json
+!/test/mica_slowgp/staged_importance*/computation-record.json
+!/test/mica_slowgp/staged_importance*/independent_review.json
+!/test/mica_slowgp/small_budget.json
+!/test/mica_slowgp/qmc_prefix_budget_plan.json
+!/test/mica_smooth/cases_highpass*/*/manifest.json
+!/test/mica_recovery/longterm_test/**/provenance.json
+!/test/mica_recovery/longterm_test/cases*/manifest.json
+!/test/mica_recovery/longterm_test/predict/prediction_candidates.json
 
-# Generated/cache content inside the allowed trees must remain local.
+# Native MICA settings use extensionless files and one TXT prior definition.
+!/test/mica_joint/figures_20260909/native/*/param/OPTIONS1D
+!/test/mica_joint/figures_20260909/native/*/param/param_input
+!/test/mica_joint/figures_20260909/native/joint/param/joint_parameter_priors.txt
+
+# Keep the repository root bounded to the existing public entrypoints and trees.
+/*
+!/.gitignore
+!/main.py
+!/joint_hubble_config.yaml
+!/notes/
+!/scripts/
+!/src/
+!/test/
+
+# Do not collect source-format files inside caches or third-party environments.
 **/__pycache__/
-**/*.py[cod]
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
+**/.mplconfig/
+**/tex.cache/
+**/.venv/
+**/venv/
+**/site-packages/
+**/node_modules/
 **/*.orig
 **/*:Zone.Identifier
-
-# Large generated test products, not test source code.
-test/disk_transfer/test_outputs/
-test/disk_transfer/gamma_fit_output/
-test/disk_transfer/gamma_test_disk_outputs/
-test/disk_transfer/disk_transfer_functions_linear.png
+/test/Temperature_mapping/outputs/lag_env/
+/test/Temperature_mapping/outputs/lag_vendor/

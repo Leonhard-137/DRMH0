@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Plot Delta_F SED from fflux_comp0 components CSV (no extinction correction)."""
+# 历史 comp0 SED 展示：读取 components CSV 的 Wave_Rest 和 Delta_F 分位数。
+# 这里画的是变化流量 Delta_F；当前 run_ffa 的 RMS SED 使用 R_lambda，二者不可仅按图名混用。
 import argparse
 from pathlib import Path
 import numpy as np
@@ -14,6 +16,8 @@ def find_csv(comp0_dir: Path) -> Path:
     return candidates[0]
 
 
+# 纵轴分别为 Delta_F_lambda 与 lambda*Delta_F_lambda，误差条来自保存的16/50/84分位数。
+# 下方参考线当前硬编码 -1/3，与 run_ffa 的 standard=-4/3 不同；解释前应先核对纵轴约定。
 def plot_sed(csv_path: Path, out_path: Path) -> None:
     df = pd.read_csv(csv_path)
     df = df.sort_values("Wave_Rest")

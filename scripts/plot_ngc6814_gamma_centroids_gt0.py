@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """NGC 6814 Gamma centroid posteriors after tau_comp0 > 0 selection."""
 
+# 复用 NGC6814 的重标记读取器，绘制 tau_comp0>0 条件后的质心分布。
+# 理论参考值和输出目录硬编码；筛后的权重需重新归一，不能沿用全后验概率解释。
 from pathlib import Path
 
 import matplotlib.pyplot as plt

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Draw the geometry of the shifted k=2 Gamma transfer function."""
 
+# k=2 Gamma 参数几何示意图；不读取任何 MICA 后验。
+# 起点 c、峰位 c+w、质心 c+2w、FWHM=2.446386...w 是不同量；示意参数不代表实际源的测量。
 from __future__ import annotations
 
 import argparse
@@ -18,6 +20,7 @@ HALF_RIGHT = 2.67834699001666
 FWHM_PER_W = HALF_RIGHT - HALF_LEFT
 
 
+# 半高点的无量纲位置由 x*exp(-x)=1/(2e) 决定；乘 w 后得到 FWHM，平移 c 不改变宽度。
 def plot(output: Path) -> None:
     ink = "#25282D"
     muted = "#5C6470"

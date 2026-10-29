@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot Mrk 817 absolute disk TFs and fitted UVW2-relative Gamma kernels."""
 
+# 读取已保存的理论绝对响应和 Gamma 前向拟合表，比较 finite_difference/linearized 两种响应。
+# 只选 mrk817_lewin2024 与 full-domain 结果；绝对盘响应和相对 UVW2 的核不是同一种对象。
 from __future__ import annotations
 
 import argparse
@@ -66,6 +68,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+# 相对核按单位面积定义；c 可以为负，负相对起点不等于绝对盘响应违反因果性。
 def gamma_k2(delay: np.ndarray, c: float, w: float) -> np.ndarray:
     """Unit-area shifted shape-2 Gamma density."""
     value = np.zeros_like(delay)
@@ -250,6 +253,7 @@ def style_axis(axis: plt.Axes) -> None:
     axis.tick_params(direction="out", length=4, width=0.8)
 
 
+# 只读前向拟合输出；所展示的相对核已经由 full-domain 拟合选择，不在此重新求解。
 def main() -> None:
     args = parse_args()
     absolute_path = args.input / "theory_absolute_transfer_functions.csv"

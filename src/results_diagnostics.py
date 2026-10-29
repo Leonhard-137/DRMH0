@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 已有 FFA/MICA 产物的诊断层：展示总光通量关系、宿主锚点和分量RMS。
+# 所有物理解释都依赖输入stage与数据版本；此模块不修正或重拟合上游模型。
 """Build compact Results diagnostics from completed FFA and MICA products.
 
 This module is deliberately a postprocessor: it reads existing sampler and
@@ -123,6 +125,7 @@ def _load_light_curve(path: Path) -> np.ndarray:
     return data
 
 
+# 按照配置解析总光 FFA 的后验、分量表和重建驱动；缺省匹配要求唯一文件。
 def _ffa_products(
     source_dir: Path,
     config: dict[str, Any],
@@ -153,6 +156,8 @@ def _ffa_products(
     return ffa, analysis_dir, components, posterior, reconstructed_x
 
 
+# 逐样本验证宿主锚点X_gal：要么选定参考波段X0，要么取各波段X0的最大值。
+# 此检验验证配置实现的一致性，不能证明恒定背景在物理上全部属于宿主星系。
 def _validate_x_gal(
     posterior: pd.DataFrame,
     bands: list[str],
@@ -193,6 +198,8 @@ def _validate_x_gal(
     return float(np.median(x_gal_samples))
 
 
+# 联合检查后验、波段顺序、X范围和输入曲线后画图。
+# 展示直线选取同一个真实联合样本，避免把互不相容的边际中位数拼成参数组。
 def make_ffa_host_figure(
     source_dir: Path,
     config: dict[str, Any],
@@ -295,6 +302,7 @@ def make_ffa_host_figure(
     scale = np.median(np.abs(summary_matrix - center), axis=0)
     fallback = np.std(summary_matrix, axis=0)
     scale = np.where(scale > 0.0, scale, np.where(fallback > 0.0, fallback, 1.0))
+    # 选择按各维MAD标准化后最靠近边际中心的真实联合样本，保留A/R/X_gal之间约束。
     summary_draw = int(
         np.argmin(np.sum(np.square((summary_matrix - center) / scale), axis=1))
     )
@@ -722,6 +730,8 @@ def _run_name(fit: dict[str, Any], band: str) -> str:
     )
 
 
+# 读取原生 driver/response 三列块，并要求时间严格递增。
+# 若原生文本舍入产生重复时刻，本读取器会拒绝，和论文绘图读取器的规则不同。
 def _load_decomposition_response(path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Return the driver and response blocks from one MICA pline product."""
     if not path.is_file():
@@ -759,6 +769,8 @@ def _observed_response_interval(path: Path) -> tuple[float, float]:
     return float(observed[0, 0]), float(observed[-1, 0])
 
 
+# 在每个响应波段的实际观测时间范围内，对原生重建均值曲线计算描述性RMS。
+# 不传播整套重建后验，也不输出RMS的可信区间；不能直接替代FFA的R参数后验。
 def make_mica_rms_table(
     source_dir: Path,
     config: dict[str, Any],
@@ -814,6 +826,7 @@ def make_mica_rms_table(
             )
         component_stats = []
         for _, response_component in decompositions:
+            # 这里只使用重建均值列；原生误差列不进入下面的时间RMS。
             values = response_component[use, 1]
             mean = float(np.mean(values))
             component_stats.append(

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# 并排比较总光/短分量的 RMS SED 与短分量延迟谱。
+# 左图使用 lambda*R_lambda；两套 SED 各用自身 UVW2 中位数做固定展示缩放。
+# 左侧标准盘虚线是锚定后的理论形状，右侧虚线及区间则来自已保存的延迟拟合。
 """Render the paper's SED/lag comparison from saved FFA and MICA products.
 
 Chart contract: one source, two compact paper-width panels in the serif,
@@ -40,6 +43,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BLUE = "#00008B"  # Guo et al. 2022 dark blue (PDF drawing RGB: 0, 0, 139/255).
 
 
+# 从联合 FFA 后验重新取 R 的边际分位数，避免旧 sed_points 表混入差分光谱定义。
 def sed_points(path):
     frame = pd.read_csv(path).sort_values("wavelength_angstrom")
     # Several older summaries contain a difference spectrum. Always use the
@@ -66,6 +70,8 @@ def sed_points(path):
     return frame
 
 
+# 所有分位数除以同一个固定 UVW2 中位数。
+# 这不是逐样本求波段比值的后验，因此参考点中心为1但保留原有误差。
 def w2_normalized_sed(points):
     """Apply a fixed display scale to the original FFA R_lambda quantiles."""
     reference = points.loc[points["band"].eq("UVW2")]
@@ -95,6 +101,8 @@ def source_title(source_name):
     return base
 
 
+# 要求两分量 Gamma 方案及唯一 UVW2 参考；输出图和来源 JSON。
+# 先检查 source/stage/result，再解释图中任何科学差异。
 def plot(source, stage="mica_gamma2_physw_relaxed", output=None, title=None, *, compact=False, show_x_labels=True, half_width=False):
     """Write PDF, PNG and provenance JSON; return their paths.
 
@@ -147,6 +155,7 @@ def plot(source, stage="mica_gamma2_physw_relaxed", output=None, title=None, *, 
     sed_curve = (wave / sed_anchor) ** (-4/3)
     lag_q = np.percentile(lag_post["tau0_b4_3"], [15.865, 50, 84.135])
     lag_factor = (wave / lag_fit["lambda0"]) ** (4/3) - 1
+    # 参考波长左侧的 lag_factor 可为负；重新排序避免误差带上下界翻转。
     lag_curves = np.sort(lag_q[:, None] * lag_factor[None, :], axis=0)
     source_label = title or source_title(source_name)
     if output is None:
@@ -285,6 +294,7 @@ def plot(source, stage="mica_gamma2_physw_relaxed", output=None, title=None, *, 
     return {extension: output.with_suffix(f".{extension}") for extension in ("pdf", "png", "json")}
 
 
+# 按给定样本顺序在最终大小重绘多源面板，并保留来源记录。
 def render_sample(workspace, sources, output_dir, stage="mica_gamma2_physw_relaxed", *, layout_only=False):
     """Render two source pairs per row, preserving readable final-size text."""
     import fitz

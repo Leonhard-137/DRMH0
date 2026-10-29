@@ -1,0 +1,5 @@
+# Matched fast-driver recovery experiment
+
+Five inputs: raw, U-only Gaussian high-pass sigma5/10/20/40 observer days. Each is fit with two Gaussian and two Gamma components, ten fits in total. All inputs derive from one saved tau_I=0.5 d, tau_S=55.3735295468 d realization; W2 is byte-identical across cases. U uses original minus normalized Gaussian trend plus original sample mean; quoted errors and priors are unchanged. The full transformed noise covariance is saved but is not consumed by native MICA.
+
+Both models retain max_num_saves=10000, ptol=0.01, two MPI ranks, one particle per rank and the previous centroid/width/amplitude priors. Run fit.py --config experiment_uonly_gp_fast_driver.yaml --suite paired_ablation --batch-size 10 --run --plot-results. Native fits run in parallel; the parent then generates transfer functions, light-curve diagnostics and corner figures serially. C0/C1 in posterior transfer/corner figures are sorted by centroid within each draw. Native reconstructed-component curves retain native labels.

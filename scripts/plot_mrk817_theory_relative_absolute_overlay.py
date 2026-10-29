@@ -9,6 +9,8 @@ display curves are independently peak-normalized so that the narrow UVM2
 relative kernel does not compress the absolute transfer functions.
 """
 
+# 高径向分辨率重算绝对盘响应，叠加既有 full-domain Gamma 相对核及卷积重建。
+# 依赖 test/disk_transfer/disktf_diff.py；存储密度保持面积约定，单独峰值归一化仅用于显示。
 from __future__ import annotations
 
 import argparse
@@ -91,6 +93,7 @@ def gamma_k2(delay: np.ndarray, c: float, w: float) -> np.ndarray:
     return density
 
 
+# 仅生成显示曲线；独立除各自峰值后不能再用曲线高度比较物理响应面积。
 def peak_normalize(values: np.ndarray) -> np.ndarray:
     peak = float(np.nanmax(values))
     if not math.isfinite(peak) or peak <= 0.0:
@@ -98,6 +101,7 @@ def peak_normalize(values: np.ndarray) -> np.ndarray:
     return np.asarray(values, dtype=float) / peak
 
 
+# 使用固定盘参数和高 NR 重算理论响应，因而本绘图脚本仍有实际数值计算成本。
 def build_absolute_tfs() -> tuple[np.ndarray, float, dict[str, np.ndarray]]:
     time_days: np.ndarray | None = None
     dt_days: float | None = None
@@ -123,6 +127,7 @@ def build_absolute_tfs() -> tuple[np.ndarray, float, dict[str, np.ndarray]]:
     return time_days, dt_days, curves
 
 
+# 存储 A*(psi_UVW2*K)；full 卷积后时间原点是两输入原点之和，dt 因子不可省略。
 def build_forward_reconstruction(
     time_days: np.ndarray,
     dt_days: float,

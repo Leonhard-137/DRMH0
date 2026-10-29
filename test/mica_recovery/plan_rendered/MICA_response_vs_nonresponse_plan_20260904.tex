@@ -1,0 +1,233 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=23mm]{geometry}
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\newfontfamily\zhfont[AutoFakeBold=2]{Droid Sans Fallback}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 0.8pt
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage[colorlinks=true,urlcolor=blue,linkcolor=black]{hyperref}
+\hypersetup{pdftitle={MICA: true slow response versus independent slow signal},pdfauthor={}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{7pt}
+\renewcommand{\baselinestretch}{1.28}
+\setlength{\emergencystretch}{2em}
+\newcommand{\RMS}{\operatorname{RMS}}
+\newcommand{\dd}{\,\mathrm{d}}
+\begin{document}
+
+{\Large\bfseries MICA {\zhfont 对真实慢响应与非响应慢信号的比较计划}}
+
+{\small 2026{\zhfont 年}9{\zhfont 月}4{\zhfont 日　｜　最新修订版　｜　公式已排版}}
+
+\section*{1. {\zhfont 这次究竟要检验什么}}
+
+\textbf{{\zhfont 在慢变化程度和强度相近时，}MICA {\zhfont 会不会把没有} W2 {\zhfont 响应关系的慢信号，也解释成一个宽转移函数？}}
+
+{\zhfont 之前的模拟只包含由宽核产生的真实响应。本次增加独立生成的慢信号，并按照已经确定的选择，把两者分别叠加到同一个短响应上。}
+
+\begin{align}
+Y_{\mathrm{R}}(t) &= 1+R_{\mathrm{short}}(t)+aR_{\mathrm{slow}}(t),\\
+Y_{\mathrm{N}}(t) &= 1+R_{\mathrm{short}}(t)+bN_{\mathrm{slow}}(t).
+\end{align}
+
+\textbf{{\zhfont 第一行：}}{\zhfont 共同短响应，加上确实由} W2 {\zhfont 产生的慢响应。}\\
+\textbf{{\zhfont 第二行：}}{\zhfont 同一个短响应，加上独立生成、没有注入} W2 {\zhfont 响应关系的慢变化。}
+
+\begin{tabular}{@{}p{0.29\linewidth}p{0.66\linewidth}@{}}
+\toprule
+{\zhfont 符号} & {\zhfont 含义}\\
+\midrule
+$C(t)$ & {\zhfont 模拟} W2 {\zhfont 光变的变动部分，两组共用。}\\
+$R_{\mathrm{short}}$ & {\zhfont 由} W2 {\zhfont 产生的短响应，两组完全相同。}\\
+$R_{\mathrm{slow}}$ & {\zhfont 由} W2 {\zhfont 经过宽核产生的真实慢响应。}\\
+$N_{\mathrm{slow}}$ & {\zhfont 独立低频随机过程；生成时不输入} W2 {\zhfont 或隐藏驱动。}\\
+$a,b$ & {\zhfont 控制两个慢成分强度的缩放系数。}\\
+$Y_{\mathrm{R}},Y_{\mathrm{N}}$ & {\zhfont 两组目标光变，之后在相同时间点采样并加噪声。}\\
+\bottomrule
+\end{tabular}
+
+{\zhfont 公式中的} $C${\zhfont 、}$R${\zhfont 、}$N$ {\zhfont 均表示去均值后的变动部分；实际光变加上正基线。这里减去常数均值，不去除长期趋势。}
+
+{\zhfont 另保留仅有短响应的基线} $Y_0(t)=1+R_{\mathrm{short}}(t)${\zhfont ，检查没有慢成分时，}MICA {\zhfont 是否也倾向给出宽成分。}
+
+\newpage
+\section*{2. {\zhfont 两种慢成分如何生成}}
+
+\subsection*{2.1 {\zhfont 真实响应组有已知响应关系}}
+
+\begin{equation}
+R_{\mathrm{short}}=C*h_{\mathrm{short}},\qquad
+R_{\mathrm{slow}}=C*h_{\mathrm{broad}}.
+\end{equation}
+
+{\zhfont 星号表示卷积。例如真实慢响应是}
+\begin{equation}
+R_{\mathrm{slow}}(t)=
+\int h_{\mathrm{broad}}(\tau)\,C(t-\tau)\dd\tau.
+\end{equation}
+
+{\zhfont 它表示：目标时刻的信号由过去一段时间的} W2 {\zhfont 变化加权叠加形成。此组可以比较恢复核与注入核。}
+
+{\zhfont 固定使用形状参数为} $2$ {\zhfont 的} Gamma{\zhfont ：}
+\begin{equation}
+h(\tau;c,w)=
+\begin{cases}
+\dfrac{\tau-c}{w^2}\exp\!\left[-\dfrac{\tau-c}{w}\right],&\tau\ge c,\\
+0,&\tau<c.
+\end{cases}
+\end{equation}
+
+{\zhfont 短核取} $c=0${\zhfont 、}$w=0.5$ {\zhfont 天；宽核取} $c=0${\zhfont 、}$w=30$ {\zhfont 天。它们的质心为} $c+2w${\zhfont ，标准差为} $\sqrt{2}\,w${\zhfont ：分别对应质心} $1$ {\zhfont 天与} $60$ {\zhfont 天，宽核标准差约} $42.4$ {\zhfont 天。}
+
+\subsection*{2.2 {\zhfont 非响应组直接从低频随机过程生成}}
+
+{\zhfont 非响应生成器只接收预设功率谱、时间网格和独立随机种子。}\textbf{{\zhfont 不接收} W2{\zhfont 、隐藏驱动或响应核。}}
+
+{\zhfont 先在各频率上抽取独立随机系数：}
+\begin{equation}
+\widetilde N(f_k)=
+\sqrt{\frac{S_N(f_k)}{2}}\,(u_k+i v_k),
+\qquad u_k,v_k\sim\mathcal N(0,1),
+\end{equation}
+{\zhfont 然后做逆傅里叶变换得到} $N_{\mathrm{slow}}(t)${\zhfont 。幅度和相位都具有随机性；实值时间序列使用相应的共轭对称处理。}
+
+{\zhfont 首版固定：}
+\begin{equation}
+S_N(f)\propto
+\frac{1}{
+\left[1+\left(2\pi f\cdot10\,\mathrm{d}\right)^2\right]
+\left[1+\left(2\pi f\cdot30\,\mathrm{d}\right)^2\right]^2
+}.
+\end{equation}
+
+\textbf{{\zhfont 这只规定信号自身在哪些频率上变化较强，不规定它如何响应} W2{\zhfont 。}}{\zhfont 选取这个谱形，是为了让两类慢成分具有接近的慢变化尺度。}
+
+\newpage
+\section*{3. {\zhfont 如何确保它确实是长时标信号}}
+
+{\zhfont 不能用}“{\zhfont 经过了宽核}”{\zhfont 代替长时标验证。对两类注入的无噪声慢成分，都独立测量其功率谱。}
+
+\begin{equation}
+Q_{\mathrm{long}}=
+\frac{\displaystyle\int_{0<f\le1/(100\,\mathrm{d})}P(f)\dd f}
+{\displaystyle\int_{f>0}P(f)\dd f}.
+\end{equation}
+
+\textbf{{\zhfont 分子：}}{\zhfont 周期不短于} $100$ {\zhfont 天的变化功率。}\\
+\textbf{{\zhfont 分母：}}{\zhfont 全部非零频率上的变化功率。}\\
+\textbf{{\zhfont 首版标准：}}$Q_{\mathrm{long}}\ge0.90${\zhfont ，即至少} $90\%$ {\zhfont 的功率来自周期不短于} $100$ {\zhfont 天的变化。}
+
+{\zhfont 统一去均值并使用} Hann {\zhfont 窗周期图，同时记录自相关首次降至} $1/e$ {\zhfont 的时间、}RMS{\zhfont ，以及实际谱与预设谱的比较。功率谱周期、自相关时标、响应核宽度是不同定义，不能直接互换。}
+
+\begin{center}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+{\zhfont 慢成分} & {\zhfont 实现}1 & {\zhfont 实现}2 & {\zhfont 实现}3\\
+\midrule
+{\zhfont 已有真实宽响应} & $94.8\%$ & $97.4\%$ & $96.8\%$\\
+{\zhfont 独立傅里叶信号，内存试算} & $97.9\%$ & $98.0\%$ & $98.4\%$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+{\zhfont 这些检查表明：}\textbf{{\zhfont 不通过} W2 {\zhfont 卷积，也能生成满足长时标标准的信号。}}{\zhfont 以上只是信号性质检查，不是} MICA {\zhfont 恢复结果。两类有限实现的周期图不要求逐点相同。}
+
+{\zhfont 非响应母序列取} $10000$ {\zhfont 天、步长} $0.2$ {\zhfont 天，截取中央} $1000$ {\zhfont 天，以减轻周期边界影响。不减去偶然相关部分，也不因为某个实现碰巧像} W2 {\zhfont 就删掉它。}
+
+\subsection*{{\zhfont 慢成分强度不超过短响应的} 0.3 {\zhfont 倍}}
+
+{\zhfont 首版在相同的无噪声观测网格上取上限：}
+\begin{equation}
+\frac{\RMS(aR_{\mathrm{slow}})}{\RMS(R_{\mathrm{short}})}
+=
+\frac{\RMS(bN_{\mathrm{slow}})}{\RMS(R_{\mathrm{short}})}
+=0.3.
+\end{equation}
+
+{\zhfont 因此：}
+\begin{equation}
+a=\frac{0.3\,\RMS(R_{\mathrm{short}})}{\RMS(R_{\mathrm{slow}})},
+\qquad
+b=\frac{0.3\,\RMS(R_{\mathrm{short}})}{\RMS(N_{\mathrm{slow}})}.
+\end{equation}
+
+\textbf{0.3 {\zhfont 是} RMS {\zhfont 比，不是核面积比例。}}{\zhfont 长时标标准用于慢成分本身；叠加共同短响应后的总光变仍包含快速变化。}
+
+\newpage
+\section*{4. {\zhfont 首轮怎样运行} MICA}
+
+\subsection*{{\zhfont 固定输入与配对条件}}
+
+{\zhfont 沿用已有三套模拟} W2{\zhfont ，隐藏} DRW {\zhfont 阻尼时间} $10$ {\zhfont 天。种子为} 2026090401{\zhfont 、} 2026090402{\zhfont 、} 2026090403{\zhfont ；独立慢信号使用单独的随机子流。}
+
+{\zhfont 观测基线} $1000$ {\zhfont 天，每} $2$ {\zhfont 天观测一次；各输入正基线为} $1${\zhfont ，测量误差为} $0.01${\zhfont 。两种混合曲线共用短响应、}W2{\zhfont 、时间戳及配对测量噪声。缩放系数一旦确定，不随恢复模型改变。}
+
+{\zhfont 首轮集中于一个合成目标波段。真实五波段采样和短窗口比较留作后续，避免先把观测条件差异混入来源比较。}
+
+\subsection*{{\zhfont 三类目标，四种恢复模型}}
+
+{\zhfont 目标曲线为：仅短响应、短响应加真实慢响应、短响应加独立慢信号。每类分别用单} Gamma{\zhfont 、双} Gamma{\zhfont 、单} Gaussian{\zhfont 、双} Gaussian{\zhfont ：}
+\begin{equation}
+3\text{ {\zhfont 类目标}}\times3\text{ {\zhfont 个实现}}\times4\text{ {\zhfont 种模型}}
+=36\text{ {\zhfont 次拟合}}.
+\end{equation}
+
+{\zhfont 统一设置：}
+\begin{itemize}
+\item {\zhfont 质心先验} $[-100,200]$ {\zhfont 天。}
+\item {\zhfont 成分标准差先验} $[0.2,100]$ {\zhfont 天，}log-uniform{\zhfont ；}Gaussian {\zhfont 的宽度参数等于标准差，}Gamma {\zhfont 的宽度参数等于标准差除以} $\sqrt2${\zhfont 。}
+\item {\zhfont 非负响应幅度，允许负} onset{\zhfont ；不额外拟合趋势或系统误差。}
+\item {\zhfont 不筛选后验分支；核实实际生效先验，并兼容读取旧} center {\zhfont 与新} centroid {\zhfont 参数名。}
+\end{itemize}
+
+{\zhfont 复用项目} MICA {\zhfont 入口。初始每作业} $2$ {\zhfont 个} MPI ranks{\zhfont ，一次一个作业；保存数} $10000${\zhfont 、}$4$ particles{\zhfont 、}\texttt{ptol=0.1}{\zhfont 。先完成第一个实现的两种混合曲线，检查耗时、参数范围与采样状态，再继续既定矩阵。}
+
+\subsection*{{\zhfont 增加真正的留出预测}}
+
+{\zhfont 对两种混合曲线的双} Gamma {\zhfont 和双} Gaussian{\zhfont ：只提供前} $700$ {\zhfont 天的目标观测，保留全程} W2{\zhfont ，预测最后} $300$ {\zhfont 天的目标光变。}
+\begin{equation}
+2\text{ {\zhfont 类混合曲线}}\times3\text{ {\zhfont 个实现}}\times2\text{ {\zhfont 种模型}}
+=12\text{ {\zhfont 次额外拟合}}.
+\end{equation}
+
+{\zhfont 总计} $36+12=\mathbf{48}$ {\zhfont 次。比较的是未使用目标观测区间的预测，不把全数据联合重建直接当作响应关系的证据。}
+
+\newpage
+\section*{5. {\zhfont 怎样解释实验结果}}
+
+\subsection*{{\zhfont 重点看五件事}}
+
+\begin{enumerate}
+\item \textbf{{\zhfont 真实慢响应能否恢复。}}{\zhfont 比较宽度、质心、成分光变与幅度是否接近注入值。}
+\item \textbf{{\zhfont 独立慢信号是否被误归因。}}{\zhfont 检查它是否也得到集中的宽核后验，以及这种结果如何随随机实现变化。}
+\item \textbf{{\zhfont 共同短响应是否被拖偏。}}{\zhfont 检查加入独立慢信号后，短成分的质心、宽度与重建是否改变。}
+\item \textbf{{\zhfont 拟合与预测是否一致。}}{\zhfont 比较训练区间残差、留出区间预测误差与未解释的长期残差。}
+\item \textbf{{\zhfont 采样与先验是否限制结果。}}{\zhfont 报告} ESS{\zhfont 、后验压边、参数退化和模型间差异。}
+\end{enumerate}
+
+{\zhfont 每个联合后验样本先形成总核，再计算总质心、中心方差及区间。不能把两个成分的中位曲线直接相加作为总核。}
+
+{\zhfont 恢复到原始通量单位时，读取} MICA {\zhfont 的} normalization{\zhfont ，避免把原生核幅度误当成输入单位下的响应面积。}RMS {\zhfont 缩放与积分核面积分别记录。}
+
+\subsection*{{\zhfont 哪些结果不能直接当作响应证据}}
+
+{\zhfont 真实响应组有注入核真值，可以量化核恢复误差。}
+
+{\zhfont 独立慢信号组只有注入曲线和它的统计性质。}\textbf{{\zhfont 不为它规定真实转移函数，也不计算相对于一个虚构真核的误差。}}MICA {\zhfont 给出的核，只是模型为解释这组数据得到的有效拟合结果。}
+
+“{\zhfont 出现宽核}”“{\zhfont 双成分证据更高}”{\zhfont 或}“{\zhfont 重建得很好}”{\zhfont ，单独都不足以证明慢信号是响应。三个实现可以展示误归因现象，不能据此声称测得可靠的误报率。}
+
+\subsection*{{\zhfont 交付与当前状态}}
+
+{\zhfont 实施时增加独立慢信号生成、配对输入、功率谱与自相关检查，以及上述} MICA {\zhfont 对照和预测诊断。未满足长时标条件或采样质量不足的结果保留明确标记，不悄悄从比较中删除。}
+
+\textbf{{\zhfont 本} PDF {\zhfont 是最新计划的排版文件。}}{\zhfont 当前只完成已有宽响应检查和独立傅里叶信号的内存可行性试算；尚未生成新的配对实验文件，尚未运行} MICA{\zhfont 。此前下载的响应模拟} ZIP {\zhfont 仍属于旧方案。}
+
+\subsection*{{\zhfont 方法来源}}
+
+J. Timmer and M. König (1995), \textit{On Generating Power Law Noise}. {\zhfont 该方法说明应同时随机化傅里叶系数的幅度和相位。}\\
+{\small\url{https://blog.ioces.com/matt/posts/colouring-noise/timmer-konig-1995.pdf}}
+
+\end{document}

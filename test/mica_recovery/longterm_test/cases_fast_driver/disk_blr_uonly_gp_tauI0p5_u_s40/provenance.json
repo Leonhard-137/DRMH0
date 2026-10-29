@@ -1,0 +1,13 @@
+{
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_fast_driver/disk_blr_uonly_gp_tauI0p5",
+  "sigma_days": 40,
+  "driver_unchanged": true,
+  "formula": "original - Gaussian weighted trend + original mean",
+  "quoted_errors": "original",
+  "full_noise_covariance": "saved for diagnosis; native MICA uses original diagonal errors",
+  "rms_retained": {
+    "disk": 0.9926885303358095,
+    "BLR": 0.9312974055546132,
+    "independent_S": 0.535196248195558
+  }
+}

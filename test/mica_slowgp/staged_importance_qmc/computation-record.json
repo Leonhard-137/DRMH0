@@ -1,0 +1,146 @@
+{
+  "schema_version": "1.0",
+  "created_at_utc": "2026-10-22T02:56:32.473601+00:00",
+  "task": {
+    "file": "task.md",
+    "sha256": "0da8b228aed148a5dced1d6080fb5ff9d546587928da28a91c14a4bd8ffb1a15",
+    "object": "Randomized component-stratified Sobol quadrature using the unchanged regularized defensive proposal",
+    "deliverables": [
+      "QMC sampling/evaluation/stratum-combination module",
+      "Analytic toy and seed/endpoint checks",
+      "Frozen settings, actual budgets and all-row toy NPZ; no GP pilot"
+    ]
+  },
+  "mathematical_context": {
+    "assumptions": [
+      "Every proposal component has known normalized density and positive full weight, and the full mixture is used in the denominator.",
+      "Independent scrambled Sobol randomizations identify the replicates used for variance estimation.",
+      "All original center strata and all proposal components including the defensive prior are retained.",
+      "Ratio uncertainty uses a finite-R delta approximation; row ESS is descriptive only."
+    ],
+    "domain": "Unit-cube prior coordinates mapped to finite logit z; each conditional center stratum has its own frozen full proposal.",
+    "precision": {
+      "mode": "machine",
+      "working_digits": 16,
+      "target_tolerance": "Exact toy integral/weight identities <=1e-14 absolute; density check <=1e-12; fixed stochastic toy checks within six scramble SE; finite-R calibration remains descriptive."
+    }
+  },
+  "implementation_discovery": {
+    "mathematica": {
+      "candidate_implementations": [],
+      "existence_evidence": "Task explicitly uses the existing NumPy/SciPy proposal and Sobol implementation.",
+      "local_availability": "not-applicable",
+      "availability_evidence": "No CAS needed or invoked; no callable Wolfram evaluator advertised."
+    },
+    "sagemath": {
+      "candidate_implementations": [],
+      "existence_evidence": "No alternate symbolic implementation is required for this fixed numerical prototype.",
+      "local_availability": "not-applicable",
+      "availability_evidence": "Existing numerical environment used without installs."
+    },
+    "python": {
+      "candidate_implementations": [
+        "scipy.stats.qmc.Sobol bits=52 random_base2",
+        "scipy.special.ndtri plus scipy.stats.chi2.ppf Student map",
+        "NumPy pairwise scramble integration and sample covariance",
+        "SciPy multivariate_t density comparator"
+      ],
+      "existence_evidence": "qmc_importance.py and check_toys.py executed; 20 final checks passed with full retained toy report.",
+      "local_availability": "available",
+      "availability_evidence": "Live Python from mica2-slowgp environment; API signature verified; toy run completes in 2.68 seconds."
+    }
+  },
+  "decision": {
+    "selected_backend": "python",
+    "backend_version": "Python 3.11.15; NumPy 2.4.3; SciPy 1.17.1",
+    "selection_reason": "Use SciPy randomized Sobol and inverse CDFs with the unchanged frozen NumPy proposal, preserving direct artifact compatibility.",
+    "fallback_reason": "not-required; requested numerical backend live verified."
+  },
+  "execution": {
+    "status": "complete",
+    "interface": "WSL Python CLI with one OpenBLAS/OMP thread",
+    "command_or_input": "env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 /home/leonhard/miniforge3/envs/mica2-slowgp/bin/python -B /home/leonhard/sci001/test/mica_slowgp/staged_importance_qmc/check_toys.py",
+    "code_artifact": "qmc_importance.py"
+  },
+  "artifacts": [
+    {
+      "role": "code",
+      "path": "qmc_importance.py",
+      "sha256": "2f60bee73af4584695eef4c82bf6a9ef171fcc1f8a88491308400b5cc1933b2b"
+    },
+    {
+      "role": "code",
+      "path": "importance.py",
+      "sha256": "0d225a24a956545a070aebead19e45b9b5eb04a79817e515e38c893c781042d4"
+    },
+    {
+      "role": "code",
+      "path": "check_toys.py",
+      "sha256": "64ca99ea68a845071d1befe503d4726f7cef8d51470ed217fb41888a0937680d"
+    },
+    {
+      "role": "description",
+      "path": "README.md",
+      "sha256": "e9d44a56af5cddd510f3aa1d6ff22a805d8c0897c98a23fa28ab39001cf5f817"
+    },
+    {
+      "role": "configuration",
+      "path": "settings.json",
+      "sha256": "84eb4df52686b3c998964b93af977c9b3376bfc4cffce482ea747fb04e7acda2"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/toy_report.json",
+      "sha256": "53af7d64959bc684c88e3967a689587d22cd3e7c010c4284031cb432c2609b02"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/bimodal_primary_rows.npz",
+      "sha256": "975cdc5032247159ed84f101c6a3e15725146981a85450807e87667a563252ba"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/call_accounting.json",
+      "sha256": "8799304d7ebeb58b9fb888669a4e7a225742eaf54741f6f5cf869e545d4fd3ef"
+    },
+    {
+      "role": "retained-initial-attempt",
+      "path": "artifacts_initial_bincount/toy_report.json",
+      "sha256": "b9227a00c79f1d92995572abfc23ac60b9c49d1315114b7e76389d702f4bb171"
+    },
+    {
+      "role": "verification",
+      "path": "independent_review.json",
+      "sha256": "352a15004ce1e27fcc7183746f387ec7233fbab48d29d34cc9e28973341923f4"
+    },
+    {
+      "role": "verification",
+      "path": "independent_review.py",
+      "sha256": "3e751539f0493701418fa9ce973e038a1d353d47c117caa4e288fa37c8ac440a"
+    }
+  ],
+  "result": {
+    "status": "complete",
+    "summary": "Fixed QMC prototype and 20 toy checks complete. Row quadrature factors include alpha/Nk/R; all MCSEs use independent scramble integrals. Planned scientific row budget is 67520; actual scientific GP calls zero. This completes prototype validation only. Independent numerical review passed seven checks; no stability claim follows.",
+    "result_artifact": "artifacts/toy_report.json"
+  },
+  "verification": {
+    "methods": [
+      "Deterministic Student and defensive inverse maps and independent full-mixture SciPy density.",
+      "Unequal-Nk exact constant-integrand and component-mass identities; complete three-center prior combination.",
+      "Same-seed replay and changed-seed point differences; explicit rejection of 0/1 endpoints.",
+      "Known constant and bimodal likelihoods; twelve independent eight-scramble experiments with exact CDF integrals.",
+      "Per-row logweight identity and no iid-row uncertainty formula.",
+      "Budget calculated directly from all frozen full component probabilities including defensive component.",
+      "Independent hand-calculated covariance/ratio, 17-fold row splitting invariance, Student map/full-q, alpha/Nk/R, seed/endpoint and center-rho audit: seven checks passed, zero GP calls."
+    ],
+    "evidence_level": "numerical-evidence",
+    "residual_or_error": "Final exact toy identities pass <=1e-14. Bimodal truth Z=0.9999376818; outer mean=0.9999500049. Tail truth=0.3498977275; outer mean=0.3499353426. Outer variance/mean reported variance=1.48 and 1.57; small-R SE is approximate.",
+    "limitations": [
+      "No scientific GP likelihood, pilot or stability gate evaluated.",
+      "The first sequential-summation attempt is preserved; pairwise summation fixes finite rounding only.",
+      "Scramble intervals and ratio delta errors are empirical and cannot certify unseen rare contributions.",
+      "All scientific budgets must be compared using realized total row counts, not target_N."
+    ]
+  }
+}

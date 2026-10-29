@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot weighted UBV parameter histograms for the NGC 5548 two-Gamma fit."""
 
+# 读取 NGC5548 既有 comp0 分支的带权 long-format 后验，绘制 UBV 的 c、w、tau。
+# 先核对样本配对、权重配对、tau=c+2w 和逐样本顺序；绘图尾部裁切不等于重新筛后验。
 from __future__ import annotations
 
 import argparse
@@ -69,6 +71,7 @@ def kish_ess(weights: np.ndarray) -> float:
     return float(1.0 / np.sum(weights**2))
 
 
+# 校验完整 UBV x tf0/tf1 组、正尺度、有限值、tau=c+2w、逐样本排序与同权配对。
 def load_and_validate(path: Path) -> pd.DataFrame:
     required = {
         "band",
@@ -149,6 +152,7 @@ def panel_range(
     return float(lo - pad), float(hi + pad)
 
 
+# 线性/对数分箱用于显示不同量；归一概率直方图不意味着筛掉未显示的尾部。
 def histogram_edges(
     values: np.ndarray,
     weights: np.ndarray,

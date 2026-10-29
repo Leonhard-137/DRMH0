@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Compare the component-0 two-Gamma posterior across Mrk 817 bands."""
 
+# 读取 Mrk817 旧 ZIP，比较各波段原生 comp0 的位置 c、尺度 w、质心和面积占比。
+# 只保留 tau0<tau1 的样本，不交换两分量标签；输出是条件后验。
 from __future__ import annotations
 
 import argparse
@@ -21,6 +23,8 @@ DEFAULT_OUTPUT = Path(
 BANDS = ("UVM2", "UVW1", "U", "B", "V")
 
 
+# 列4/6、7/9分别存 logA/logw；取指数后得到正面积和尺度，tau=c+2w。
+# 后续掩码保留原生 tau0<tau1，不逐样本重标记；区域比例必须说明分母来自原始还是已筛样本。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     member = (
         f"2comp/run_UVW2_to_{band}_2comp_gamma/data/"

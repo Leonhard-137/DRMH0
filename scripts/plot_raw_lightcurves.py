@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot every source's raw multi-band light curves into its raw directory."""
 
+# 通用原始光变绘图入口：未指定 sources 时扫描项目下所有带 raw CSV 的源。
+# 为每个源向 raw/ 写 PNG/PDF；不进行拟合，图上的跨季节断线也不修改原始 CSV。
 from __future__ import annotations
 
 import argparse
@@ -86,6 +88,7 @@ def source_csv(source_dir: Path) -> Path | None:
     return None
 
 
+# 阈值取 max(5*中位正采样间隔,0.03*总跨度)，在大间隔插 NaN 断开图线，不插补观测。
 def line_with_gaps(times: np.ndarray, fluxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Insert NaNs across major observing gaps so lines do not bridge seasons."""
     if len(times) < 3:
@@ -262,6 +265,7 @@ def plot_source(source_dir: Path, csv_path: Path, *, dpi: int = 250) -> tuple[Pa
     return png_path, pdf_path
 
 
+# 默认扫描所有顶层源，运行前应确认批量写图范围；只接受能识别的 raw CSV。
 def discover_sources(root: Path) -> list[tuple[Path, Path]]:
     found = []
     for source_dir in sorted(root.iterdir(), key=lambda path: path.name.casefold()):

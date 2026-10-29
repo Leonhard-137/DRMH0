@@ -1,0 +1,40 @@
+{
+  "case": "responses_s40",
+  "source_config": "/home/leonhard/sci001/Mrk817_a/config/source_config.yaml",
+  "source_inputs": "/home/leonhard/sci001/test/mica_smooth/data/original",
+  "smoothing": {
+    "method": "normalized_gaussian_at_observation_times",
+    "sigma_days": 40.0,
+    "smooth_driver": false,
+    "output": "highpass_residual_plus_original_mean",
+    "flux_formula": "F_original - W @ F_original + mean(F_original)",
+    "offset": "original_sample_mean_per_band",
+    "error_mode": "original",
+    "input_flux_state": "already_dereddened_and_host_subtracted",
+    "noise_covariance_used_by_mica": "diagonal_only"
+  },
+  "detrended_bands": [
+    "UVM2",
+    "UVW1",
+    "U",
+    "B",
+    "V"
+  ],
+  "added_mean_by_band": {
+    "UVW2": 0.0,
+    "UVM2": 33.55391536117193,
+    "UVW1": 23.281936455550674,
+    "U": 12.876272431642406,
+    "B": 6.117737125878012,
+    "V": 3.4322492280203534
+  },
+  "input_columns": [
+    "MJD",
+    "flux",
+    "flux_error"
+  ],
+  "weights": "exp(-0.5*((ti-tj)/sigma_days)**2), normalized over observed j",
+  "edges": "renormalize available observations; no padding or extrapolation",
+  "covariance": "H @ diag(original_error**2) @ H.T, H=I-W+J, J_ij=1/N; saved in noise/",
+  "uncertainty_scope": "Exploratory: MICA ignores smoothing-induced noise correlations."
+}

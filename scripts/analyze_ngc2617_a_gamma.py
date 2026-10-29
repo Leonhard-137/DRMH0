@@ -7,6 +7,8 @@ tau = center + 2 exp(log(width)); components are relabelled per draw by
 increasing centroid and f is the short-component amplitude fraction.
 """
 
+# NGC2617_a 的两 Gamma 后验诊断：读取已完成的 sample1d+weights，写 raw/ 下的表与图。
+# 绝对工作区和 BLR 比较数值均在本文件固定；W2 是人为零点锚，不是拟合出的无误差测量。
 from __future__ import annotations
 
 import csv
@@ -63,6 +65,7 @@ def weighted_quantiles(values: np.ndarray, weights: np.ndarray, probs=(P16, P50,
     return tuple(float(np.interp(p, cdf, x)) for p in probs)
 
 
+# Kish ESS=(sum w)^2/sum(w^2) 反映权重集中程度，不是链自相关的有效样本数。
 def kish_ess(weights: np.ndarray) -> float:
     weights = np.asarray(weights, dtype=float)
     weights = weights / weights.sum()
@@ -88,6 +91,7 @@ def load_weights(data_dir: Path) -> np.ndarray:
     return weights / weights.sum()
 
 
+# Gamma 的 tau=c+2exp(logw)，面积 A=exp(logA)；按 tau 同步重排，再计算 f_short=A_short/(A0+A1)。
 def load_gamma(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     if band == "W2":
         # W2 is the driver anchor, not a fitted response band.
@@ -119,6 +123,7 @@ def load_gamma(band: str) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
     return {"comp0": tau[:, 0], "comp1": tau[:, 1], "f": f0}, weights, run_name
 
 
+# 保留 0<tau_short<tau_long，并用保留的后验质量重新归一权重；记录 retained 是必要的。
 def select_gamma(values: dict[str, np.ndarray], weights: np.ndarray) -> tuple[dict[str, np.ndarray], np.ndarray, float]:
     keep = (values["comp0"] > 0.0) & (values["comp0"] < values["comp1"])
     retained = float(weights[keep].sum())

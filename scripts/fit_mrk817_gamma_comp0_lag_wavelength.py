@@ -11,6 +11,8 @@ importance reweighting from flat(log w) to flat(w0, w1), and after the w0-only
 diagnostic reweighting used elsewhere in this project.
 """
 
+# 读取 Mrk817 旧 Gamma ZIP，以非 U 波段拟合固定 4/3 延迟关系并预测 U。
+# 比较原先验与宽度重要性重加权；每方案独立抽取 150000 组波段边际，不恢复跨波段协方差。
 from __future__ import annotations
 
 import io
@@ -61,6 +63,7 @@ def normalize(log_weight: np.ndarray) -> np.ndarray:
     return weight / np.sum(weight)
 
 
+# 保留 native tau0<tau1；flat_w0_w1 权重乘 w0*w1，flat_w0_only 只乘 w0。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     sample = np.loadtxt(io.BytesIO(archive.read(member(band, "posterior_sample1d.txt_2"))))
     w0 = np.exp(sample[:, 6])
@@ -92,6 +95,8 @@ def x_value(wavelength: float) -> float:
     return (wavelength / WAVELENGTH["UVW2"]) ** (4.0 / 3.0) - 1.0
 
 
+# 固定 x=(lambda/lambda_UVW2)^(4/3)-1，锚定拟合 A=sum(wxy)/sum(wx^2)。
+# 另用带截距设计矩阵作比较；非U波段和U分别从边际分布重抽样，未包含共用参考波段相关性。
 def fit_scheme(
     data: dict[str, dict[str, np.ndarray]], scheme: str, rng: np.random.Generator
 ) -> tuple[dict[str, float], dict[str, np.ndarray]]:

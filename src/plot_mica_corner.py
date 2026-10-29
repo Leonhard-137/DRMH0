@@ -65,6 +65,7 @@ GRAY = "#B8B8B8"
 MEDIAN = "#E69F00"
 
 
+# 先在目标目录完整渲染临时文件，成功后替换目标；单张图失败不会留下半个旧文件。
 def save_figure_atomic(fig, path: Path, **kwargs):
     """Render beside the destination and replace it only after a clean save."""
     path = Path(path)
@@ -80,6 +81,8 @@ def save_figure_atomic(fig, path: Path, **kwargs):
         raise
 
 
+# 从原生参数名文件读取采样坐标边界；零宽度 DRW 占位边界视为未知。
+# 交换两个分量后，显示边界使用两原始分量边界的并集，以免误裁重标号样本。
 def sampling_bounds(run: Path, columns: list[str], relabel: bool):
     """Saved native-coordinate bounds; zero-width DRW placeholders are unknown."""
     by_name = {}
@@ -101,10 +104,14 @@ def sampling_bounds(run: Path, columns: list[str], relabel: bool):
     return bounds
 
 
+# 取同一等权后验行中的 DRW 与各分量采样坐标，不把各列独立打乱或重采样。
+# 双 Gamma 角图无论配置如何都强制按质心排序；transfer/汇总默认仍遵从各自配置。
+# ln(A)、ln(w)、ln(DRW 参数) 保留原生坐标；历史 center 与当前 centroid 也保持不同轴标签。
 def read_corner_samples(run: Path, fit: dict):
     """Keep DRW and component coordinates from the same complete joint rows."""
     fit = dict(fit)
     if model_label(fit.get("type_tf", "gaussian")) == "gamma" and ncomp_from_config(fit) == 2:
+        # 角图的双 Gamma 特例会覆盖 native 标签配置，跨图比较 comp0/comp1 时先核对该规则。
         fit["component_order"] = "moment1"
     native, native_names, kinds, nswapped = read_joint_parameters(run, fit)
     values = [native[:, native_names.index(name)] for name in ("sigmad", "taud")]
@@ -151,6 +158,7 @@ def read_corner_samples(run: Path, fit: dict):
     return samples, symbols, labels, info
 
 
+# 画幅必须容纳全部样本并尊重已保存硬边界；常数维度仅扩展显示范围，不人为加随机噪声。
 def sample_ranges(samples: np.ndarray, prior_bounds=None) -> list[tuple[float, float]]:
     """Include all draws, padding constant dimensions without adding noise."""
     limits = []
@@ -170,6 +178,8 @@ def sample_ranges(samples: np.ndarray, prior_bounds=None) -> list[tuple[float, f
     return limits
 
 
+# 只平滑二维显示直方图；仅在真实先验硬边界反射，样本极值处不伪造反射概率。
+# 有序质心的禁区置零后再恢复原计数总和；这不是重新估计或修改原始后验。
 def smooth_histogram(counts, sigma, reflect_edges, ordered_mask=None):
     """Smooth bin mass; reflect only at saved hard bounds, never at sample extrema."""
     density = np.asarray(counts, dtype=float).copy()
@@ -194,6 +204,8 @@ def smooth_histogram(counts, sigma, reflect_edges, ordered_mask=None):
     return density
 
 
+# 按二维格点质量从高到低累计，找到包住 68.3%/95.4% 显示概率的密度阈值。
+# 有限网格与平滑使包围概率是近似值，不要把它称为一维 1σ/2σ 区间。
 def contour_thresholds(counts: np.ndarray) -> np.ndarray:
     """Highest-count bin thresholds for the named enclosed probability masses."""
     ordered = np.sort(counts[counts > 0.0])[::-1]
@@ -205,6 +217,7 @@ def contour_thresholds(counts: np.ndarray) -> np.ndarray:
     return thresholds[thresholds < ordered[0]]
 
 
+# 标题取未平滑原样本的等尾分位数；科学计数与小数位只影响文字显示。
 def parameter_title(symbol: str, quantiles: np.ndarray) -> str:
     low, median, high = map(float, quantiles)
     extent = max(abs(low), abs(median), abs(high))
@@ -220,6 +233,9 @@ def parameter_title(symbol: str, quantiles: np.ndarray) -> str:
     return rf"${symbol}={value}$"
 
 
+# 对角线是未平滑的一维直方图和等尾区间；下三角保留全部散点，并可叠加二维密度。
+# 少于 100 个样本/不同联合行、常数维度或中央区间不足三个格子时只画散点。
+# 平滑物理带宽还受中央区间四分之一约束；这些是显示保护，不是收敛验收阈值。
 def make_corner(samples: np.ndarray, symbols: list[str], labels: list[str], bins: int = 40,
                 *, hist_bins: int = 25, smooth: float = 1.0, prior_bounds=None,
                 ordered_pairs=()):
@@ -239,7 +255,9 @@ def make_corner(samples: np.ndarray, symbols: list[str], labels: list[str], bins
     edges = [np.linspace(low, high, bins + 1) for low, high in limits]
     bin_widths = np.array([(high - low) / bins for low, high in limits])
     central_widths = quantiles[2] - quantiles[0]
+    # 把平滑强度从“格子数”约束到实际参数尺度，避免宽画幅把窄后验核心抹平。
     sigma_bins = np.minimum(smooth, 0.25 * central_widths / bin_widths)
+    # 中央区间不足三个格子的二维密度不够分辨，只保留原散点而不绘制误导的平滑等高线。
     unresolved = (central_widths < 3 * bin_widths) & ~constant
     reflect_edges = [(bound is not None and low == bound[0],
                       bound is not None and high == bound[1])
@@ -330,6 +348,8 @@ def make_corner(samples: np.ndarray, symbols: list[str], labels: list[str], bins
                      "lower_triangle": "scatter_only" if sparse else "scatter_density_contours"}
 
 
+# 先读完选中波段并验证，再逐张导出矢量 PDF 与 300 dpi PNG。
+# 函数返回 provenance/量化绘图设置，但当前 CLI 不另存 JSON sidecar。
 def plot_source_stage(source_dir: Path, stage: str, *, bands: list[str] | None = None,
                       bins: int = 40, hist_bins: int = 25, smooth: float = 1.0):
     cfg = read_yaml(source_dir / "config/source_config.yaml")
@@ -390,6 +410,7 @@ def plot_source_stage(source_dir: Path, stage: str, *, bands: list[str] | None =
     return products
 
 
+# 对多个 source/stage 绘制保存的后验；任一所选 stage 失败会返回非零，供调用方识别不完整输出。
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("sources", nargs="+", help="source directory name(s) or paths")

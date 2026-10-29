@@ -1,0 +1,24 @@
+{
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases/abl_disk_blr_uonly_gp_raw",
+  "sigma_days": 5,
+  "driver_unchanged": true,
+  "error_mode": "original",
+  "filter": "original - Gaussian weighted trend + original mean",
+  "rms_original": {
+    "independent": 0.09356932709484046,
+    "disk": 0.09212785300142805,
+    "blr": 0.011733751778507146
+  },
+  "rms_filtered": {
+    "independent": 0.0034320642423384547,
+    "disk": 0.02545676890816078,
+    "blr": 0.0012423240808918884
+  },
+  "rms_retained": {
+    "independent": 0.036679372919501345,
+    "disk": 0.2763200061523868,
+    "blr": 0.1058761174041084
+  },
+  "independent_to_blr_rms": 2.762615886729419,
+  "sampling_and_priors_from": "/home/leonhard/sci001/test/mica_recovery/longterm_test/experiment_uonly_gp_highpass.yaml"
+}

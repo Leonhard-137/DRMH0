@@ -1,0 +1,86 @@
+{
+  "candidate_id": "C089",
+  "role": "highest_screen_rate",
+  "parameters": {
+    "tauI": 8.0,
+    "tauS": 160.0,
+    "AW": 0.09031467969806249,
+    "AU": 0.0716691377316839,
+    "BW": 0.35014428090397276,
+    "BU": 0.39794368839343613
+  },
+  "seed": 8171006,
+  "example_index0": 1692,
+  "source_ensemble_size": 2000,
+  "source_curves": "/home/leonhard/sci001/test/mica_recovery/longterm_test/psd_match_817/local_peak_check/examples/C089_curves.npz",
+  "source_psd": "/home/leonhard/sci001/test/mica_recovery/longterm_test/psd_match_817/local_peak_check/examples/C089.npz",
+  "observed_means": {
+    "UVW2": 41.05742775728105,
+    "U": 12.876272431642406
+  },
+  "fractional_model": "w=AW*(DW*I)+BW*S+nW; u=AU*(0.9*DU*I+0.1*B*I)+BU*S+nU",
+  "physical_model": "F_W=mean_W*(1+w); F_U=mean_U*(1+u)",
+  "latent_processes": {
+    "I": "unit stationary-variance OU",
+    "S": "unit stationary-variance Matern3/2; covariance (1+|h|/tauS)*exp(-|h|/tauS)",
+    "shared_between_bands": true,
+    "I_and_S_independent": true
+  },
+  "normalization": "Import saved fractional curves; restore fixed observed band means; no new draw, seed change, RMS rescaling, clipping or added baseline",
+  "selected_realization_caveat": "Deliberately selected low-mismatch joint local-peak example, not a typical or unbiased realization",
+  "kernel_truth": {
+    "parameters": {
+      "covariance_dt_days": 0.025,
+      "covariance_n": 524288,
+      "disk_support_days": 100.0,
+      "t1_kelvin": 5900.0,
+      "driver_wavelength_observed_angstrom": 1928.0,
+      "response_wavelength_observed_angstrom": 3465.0,
+      "blr_theta_days": 7.0,
+      "blr_onset_days": 6.0,
+      "redshift": 0.031,
+      "inclination_deg": 45.0,
+      "disk_fine_factor": 4,
+      "disk_origin_cells": 256,
+      "disk_origin_order": 24,
+      "response_disk_gain": 0.9,
+      "response_blr_gain": 0.1
+    },
+    "disk_normalization": "each disk Fourier kernel divided by its quadrature area",
+    "disk_quadrature_areas_before_normalization": {
+      "UVW2": 1.00000092428717,
+      "U": 1.0000001927243196
+    },
+    "response_disk_fraction": 0.9,
+    "response_blr_fraction": 0.1,
+    "response_area_ratio": 9.0,
+    "blr_shape": 2,
+    "blr_onset_days": 6.0,
+    "blr_scale_days": 7.0,
+    "blr_centroid_days": 20.0,
+    "blr_physical_std_days": 9.899494936611665,
+    "reference": "Physical I-to-W2/I-to-U kernels; not an injected single W2-to-U effective kernel"
+  },
+  "truth_time_series_available": false,
+  "truth_time_series_note": "Saved NPZ contains total noisy curves only; no component values are fabricated or replayed",
+  "raw_validation": {
+    "UVW2": {
+      "raw_psd_max_relative_error": 2.275957200481571e-14,
+      "fractional_roundtrip_max_abs_error": 1.6653345369377348e-16,
+      "samples": 306,
+      "mean_flux": 41.057427757281054,
+      "original_mean": 41.05742775728105
+    },
+    "U": {
+      "raw_psd_max_relative_error": 1.5432100042289676e-14,
+      "fractional_roundtrip_max_abs_error": 3.3306690738754696e-16,
+      "samples": 316,
+      "mean_flux": 12.876272431642404,
+      "original_mean": 12.876272431642406
+    }
+  },
+  "sigma_days": null,
+  "filtered_bands": [],
+  "input_units": "original observed flux units",
+  "input_formula": "F=original_observed_mean*(1+saved_fractional)"
+}

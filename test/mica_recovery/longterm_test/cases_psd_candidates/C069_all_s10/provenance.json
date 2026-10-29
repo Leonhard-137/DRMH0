@@ -1,0 +1,45 @@
+{
+  "candidate_id": "C069",
+  "variant": "all_s10",
+  "sigma_days": 10,
+  "case": "C069_all_s10",
+  "case_dir": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_psd_candidates/C069_all_s10",
+  "original_case": "/home/leonhard/sci001/test/mica_recovery/longterm_test/cases_psd_candidates/C069_raw",
+  "filtered_bands": [
+    "UVW2",
+    "U"
+  ],
+  "input_formula": "F_raw - normalized Gaussian trend(F_raw) + mean(F_raw)",
+  "quoted_errors": "original observed absolute errors",
+  "full_noise_covariance": "saved after filtering; MICA consumes original diagonal errors",
+  "validation": {
+    "UVW2": {
+      "processed": true,
+      "epochs_unchanged": true,
+      "quoted_errors_unchanged": true,
+      "input_positive": true,
+      "minimum_flux": 34.77467245098605,
+      "formula_max_abs_error": 0.0,
+      "restored_mean_formula_abs_error": 7.105427357601002e-15,
+      "original_mean": 41.05742775728105,
+      "output_mean": 41.039955355625004,
+      "saved_filtered_psd_max_relative_error": null,
+      "variability_rms": 1.8365327492586323,
+      "fractional_rms": 0.04473082824661233
+    },
+    "U": {
+      "processed": true,
+      "epochs_unchanged": true,
+      "quoted_errors_unchanged": true,
+      "input_positive": true,
+      "minimum_flux": 10.864026970846423,
+      "formula_max_abs_error": 0.0,
+      "restored_mean_formula_abs_error": 1.7763568394002505e-15,
+      "original_mean": 12.876272431642406,
+      "output_mean": 12.87345271650441,
+      "saved_filtered_psd_max_relative_error": null,
+      "variability_rms": 0.5509506824157259,
+      "fractional_rms": 0.04278805728448311
+    }
+  }
+}

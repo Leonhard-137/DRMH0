@@ -1,0 +1,47 @@
+{
+  "input": "local Nt250 xi10 temperature-map residual; 267 Swift U points",
+  "official_javelin_covariance": true,
+  "parameters": {
+    "seed": 5548,
+    "walkers": 24,
+    "burn": 400,
+    "steps": 2500,
+    "max_steps": 6500,
+    "workers": 2
+  },
+  "bounds_internal": [
+    [
+      -3.912023005428146,
+      2.995732273553991
+    ],
+    [
+      0.0,
+      9.210340371976184
+    ],
+    [
+      -50.0,
+      80.0
+    ],
+    [
+      0.01,
+      40.0
+    ],
+    [
+      0.001,
+      1.5
+    ]
+  ],
+  "paper": {
+    "lag_days": [
+      0.11,
+      0.17,
+      0.36
+    ],
+    "scale": [
+      0.22,
+      0.02,
+      0.02
+    ]
+  },
+  "caveat": "CONDITIONAL phenomenological fit: ignores the map-estimation covariance and shared measurement noise between U and its fitted residual. Not proof for/against BLR; priors and sampling differ from unpublished author configuration."
+}

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# 独立的旧多源入口：读各源逐波段 lnD 均值/协方差，边缘化源内波段散度，再联合 H0。
+# 不相乘已保存的单源 H0 链，也不把同一 AGN 不同历元或不同模型当独立源。
+# SciPy 的 Gauss-Legendre 节点、logsumexp、正态 CDF/求根和积分实现稳定边缘化。
+# 本模块采用 lnD 高斯摘要；shared_sed_hubble/h0.py 则采用每源一个线性 D_L 高斯摘要，二者模型不同。
 """Joint H0 from saved, correlated log-distance summaries; no MICA/FFA reruns.
 
 Chart contract: one point per independent AGN, luminosity distance versus z,
@@ -39,6 +43,7 @@ PROBS = np.array([ndtr(-2.0), ndtr(-1.0), 0.5, ndtr(1.0), ndtr(2.0)])
 Q_NAMES = ("q2p3", "q16", "q50", "q84", "q97p7")
 
 
+# 限定配置路径在项目根的子目录内，避免错误定位外部输入/输出。
 def under(root: Path, relative: str) -> Path:
     """Resolve a configured path without allowing writes/reads outside root."""
     path = (root / relative).resolve()
@@ -47,6 +52,7 @@ def under(root: Path, relative: str) -> Path:
     return path
 
 
+# 剥离 _a/_b 等历元后缀检查独立 AGN，防止同源重复计数。
 def validate_sources(sources: list[str]) -> None:
     ids = [re.sub(r"_[a-z]$", "", s, flags=re.I).casefold() for s in sources]
     if not sources or len(set(ids)) != len(ids):
@@ -55,6 +61,7 @@ def validate_sources(sources: list[str]) -> None:
         raise ValueError("source names must be directory names, not paths")
 
 
+# 返回 H0 D；comoving 为 c∫dz/E，luminosity 再乘 (1+z)，对应 Mpc 距离。
 def distance_scale(z: float, om0: float, kind: str) -> float:
     """Return H0 * D(z) in flat LambdaCDM; D is in Mpc for H0 in km/s/Mpc."""
     if not np.isfinite(z) or z <= 0 or not 0 <= om0 <= 1:
@@ -65,6 +72,7 @@ def distance_scale(z: float, om0: float, kind: str) -> float:
     return C_KMS * integral * ((1 + z) if kind == "luminosity" else 1)
 
 
+# 一阶传播 σ_lnD=(d lnD/dz)(1+z)σ_v/c；同一源各波段共用此误差，不独立加到对角。
 def velocity_ln_sigma(z: float, om0: float, kind: str, velocity: float) -> float:
     """First-order peculiar-velocity uncertainty, common to ALL source bands."""
     if not np.isfinite(velocity) or velocity < 0:
@@ -76,6 +84,7 @@ def velocity_ln_sigma(z: float, om0: float, kind: str, velocity: float) -> float
     return derivative * (1 + z) * velocity / C_KMS
 
 
+# 按真实网格坐标构造梯形权重；即使 H0 用对数间隔，也仍积分 dH0。
 def integration_weights(x: np.ndarray) -> np.ndarray:
     if len(x) == 1:
         return np.ones(1)
@@ -84,6 +93,7 @@ def integration_weights(x: np.ndarray) -> np.ndarray:
     return np.r_[np.diff(x)[0], x[2:] - x[:-2], np.diff(x)[-1]] / 2
 
 
+# 积分密度得到 CDF 后插值分位数，单点模型直接重复该点。
 def pdf_quantiles(x: np.ndarray, pdf: np.ndarray) -> np.ndarray:
     if len(x) == 1:
         return np.repeat(x[0], len(PROBS))
@@ -93,6 +103,7 @@ def pdf_quantiles(x: np.ndarray, pdf: np.ndarray) -> np.ndarray:
     return np.interp(PROBS, cdf / cdf[-1], x)
 
 
+# 每源多波段 lnD 似然压成一维正态混合，混合来自对源内波段散度 f_i 的积分。
 @dataclass
 class BandMixture:
     """A normalized mixture proportional to the source-only lnD likelihood."""
@@ -100,6 +111,9 @@ class BandMixture:
     variance: np.ndarray
     log_weight: np.ndarray
 
+    # 先验证完整协方差正定并特征分解，再给每个 f_i 节点加 f_i²I。
+    # 对公共 lnD 完成平方，得到各节点的一维均值、方差与相对证据权重。
+    # 减去中心再做二次型以避免大数相减；不能先把各波段当独立点平均。
     @classmethod
     def from_summary(cls, mean, covariance, scatter_range=(0, 1), nodes=128):
         mean, covariance = np.asarray(mean, float), np.asarray(covariance, float)
@@ -136,6 +150,7 @@ class BandMixture:
         log_weight -= logsumexp(log_weight)
         return cls(centre + fitted, 1 / a, log_weight)
 
+    # 给混合分量增加共同方差 σ_int²+σ_velocity²，再用 logsumexp 求源级似然。
     def log_likelihood(self, mu, extra_variance=0.0):
         mu, extra = np.broadcast_arrays(mu, extra_variance)
         variance = self.variance + extra[..., None]
@@ -144,6 +159,7 @@ class BandMixture:
         )
         return logsumexp(terms, axis=-1)
 
+    # 对正态混合 CDF 数值求根，得到只依赖该源数据的距离区间。
     def quantiles(self):
         weights, sd = np.exp(self.log_weight), np.sqrt(self.variance)
         lower, upper = np.min(self.mean - 12 * sd), np.max(self.mean + 12 * sd)
@@ -153,6 +169,7 @@ class BandMixture:
         ) for p in PROBS])
 
 
+# 保存输入字节摘要、大小和时间，用于来源追溯。
 def file_record(path: Path, content: bytes | None = None) -> dict:
     if content is None:
         content = path.read_bytes()
@@ -160,6 +177,7 @@ def file_record(path: Path, content: bytes | None = None) -> dict:
             "bytes": len(content), "mtime_ns": path.stat().st_mtime_ns}
 
 
+# 读取模型匹配的均值/协方差/运行摘要，按波段标签对齐，并记录上游样本数与 MICA ESS 警告。
 def load_source(root: Path, source: str, dataset: str, relative: str, model: str, cfg: dict):
     source_dir = under(root, source)
     result = under(source_dir, relative)
@@ -223,6 +241,7 @@ def load_source(root: Path, source: str, dataset: str, relative: str, model: str
     return {"mixture": mixture, "meta": meta, "scale": scale, "velocity": vsig}
 
 
+# 将一维源级混合评价在 H0 与共同额外散度网格上。
 def source_log_grid(data, h0, scatter):
     mu = np.log(data["scale"] / h0)
     result = np.empty((len(scatter), len(h0)))
@@ -233,6 +252,7 @@ def source_log_grid(data, h0, scatter):
     return result
 
 
+# 相乘独立源似然并按网格权重归一化，报告 H0/散度边缘分位与边界质量。
 def fit_joint(log_grid, h0, scatter):
     wh, ws = integration_weights(h0), integration_weights(scatter)
     log_h = logsumexp(log_grid + np.log(ws)[:, None], axis=0)
@@ -250,6 +270,7 @@ def fit_joint(log_grid, h0, scatter):
             "h0_edge_mass": edge_mass, "scatter_upper_tail_mass": scatter_tail}
 
 
+# 生成未受联合 H0 收缩的源级距离展示点；D_M 输入只在展示 D_L 时乘 (1+z)。
 def source_row(data):
     meta = data["meta"]
     q = np.exp(data["mixture"].quantiles())
@@ -262,6 +283,7 @@ def source_row(data):
     return row
 
 
+# 统一本模块静态图风格，不改变统计结果。
 def plot_style():
     plt.rcParams.update({"font.family": "serif", "font.serif": ["STIXGeneral"],
                          "mathtext.fontset": "stix", "font.size": 11,
@@ -272,6 +294,7 @@ def plot_style():
                          "savefig.facecolor": "white"})
 
 
+# 同步保存 PNG/PDF 并关闭图对象。
 def save_figure(fig, stem: Path, cfg: dict):
     for suffix in cfg["plot"].get("formats", ["png", "pdf"]):
         if suffix not in ("png", "pdf", "svg"):
@@ -280,10 +303,12 @@ def save_figure(fig, stem: Path, cfg: dict):
     plt.close(fig)
 
 
+# 用保存的分位数生成 H0 标签。
 def h0_label(q):
     return rf"$H_0={q[2]:.1f}^{{+{q[3]-q[2]:.1f}}}_{{-{q[2]-q[1]:.1f}}}$"
 
 
+# 放置源名，标记仅是绘图元数据。
 def annotate_sources(ax, rows):
     """Place the small set of source names without colliding with each other."""
     ax.figure.canvas.draw()
@@ -311,6 +336,7 @@ def annotate_sources(ax, rows):
         occupied.append(box)
 
 
+# 每个独立 AGN 画一个光度距离点，模型带表示 H0 参数区间，不是预测散度。
 def draw_hubble(ax, result, cfg, compact=False, ymax=None):
     rows, hq = result["rows"], result["fit"]["h0_q"]
     zmax = max(r["z"] for r in rows) * 1.15
@@ -341,6 +367,7 @@ def draw_hubble(ax, result, cfg, compact=False, ymax=None):
         annotate_sources(ax, rows)
 
 
+# 为单个模型结果生成 Hubble 与后验图。
 def make_figures(result, cfg, folder, h0):
     fig, ax = plt.subplots(figsize=(7.4, 5.7))
     fig.subplots_adjust(left=0.13, bottom=0.16, top=0.89, right=0.96)
@@ -368,6 +395,7 @@ def make_figures(result, cfg, folder, h0):
     save_figure(fig, folder / "h0_posterior", cfg)
 
 
+# 并排比较独立模型/数据分支，不相乘不同分析的后验。
 def comparison_figures(results, cfg, out):
     for model in cfg["disk_models"]:
         subset = [r for r in results if r["model"] == model]
@@ -409,6 +437,7 @@ def comparison_figures(results, cfg, out):
         save_figure(fig, out / ("hubble_grid_" + model), cfg)
 
 
+# 检查源/波段/样本策略后读取摘要，在网格上联合推断并写输入清单、后验与图；dry-run 只检查输入。
 def main(argv=None):
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)

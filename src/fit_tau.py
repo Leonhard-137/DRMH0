@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# 学习主线：MICA 已收集的 tf0 质心后验 → 相对 λ–τ 拟合 → 绝对延迟 → 距离输入。
+# 本文件不重跑 MICA，但自由指数分支会用 emcee；仅阅读/注释时无需调用 main/run。
+# τ、τ0 使用输入后验的天单位；λ 为观测波长 Å；二阶中心矩单位为天²，增益零阶矩为通量响应比例。
+# 专业依赖：emcee 负责自由指数联合采样，SciPy 优化/统计用于初始化和诊断；内部 posterior_branches 管理条件分支。
+# 先分清“相对响应核的质心”与“相对未观测驱动的绝对盘延迟”：后者通过幂律模型外推得到。
 from __future__ import annotations
 
 import argparse
@@ -94,21 +99,25 @@ TF_LABELS = {
 }
 
 
+# 读取源配置；空 YAML 转空字典，路径解析由 rel 与各结果目录函数处理。
 def read_yaml(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
+# 把相对路径锚定在当前源目录，防止把不同源的输入/输出混用。
 def rel(base: Path, path) -> Path:
     path = Path(path).expanduser()
     return path if path.is_absolute() else base / path
 
 
+# 返回中位数及中央约 68.27% 区间的上下偏差，不等同于对称标准差。
 def q68(x) -> tuple[float, float, float]:
     p16, p50, p84 = np.percentile(np.asarray(x, float), [15.865, 50.0, 84.135])
     return float(p50), float(p50 - p16), float(p84 - p50)
 
 
+# 保留样本权重的分位数摘要；下游先用它得到每个波段的中位值和不对称误差。
 def weighted_quantile(values, weights, quantiles=(0.15865, 0.5, 0.84135)):
     values = np.asarray(values, float)
     weights = np.asarray(weights, float)
@@ -124,32 +133,39 @@ def weighted_quantile(values, weights, quantiles=(0.15865, 0.5, 0.84135)):
     return np.interp(np.asarray(quantiles, float), cdf, values)
 
 
+# 统一当前 MICA 传递函数族的名称，避免 Gaussian/Gamma 分支混读。
 def model_label(model) -> str:
     return _model_label(model)
 
 
+# 取当前 MICA 阶段的分量数；后验元数据必须与此一致。
 def ncomp_from_config(fit: dict) -> int:
     return _ncomp_from_config(fit)
 
 
+# 从选定 MICA 阶段取配置，是多阶段流程的共同路由点。
 def mica_fit(cfg: dict) -> dict:
     return stage_config(cfg, str(cfg.get("_mica_stage", "mica_round1")))
 
 
+# 定位选定阶段的运行根目录。
 def mica_run_root(source_dir: Path, cfg: dict) -> Path:
     return _mica_run_root(source_dir, mica_fit(cfg))
 
 
+# 定位该阶段已收集的后验，而非重新读/运行采样器。
 def mica_collection_dir(source_dir: Path, cfg: dict) -> Path:
     out = mica_run_root(source_dir, cfg) / "result"
     out.mkdir(parents=True, exist_ok=True)
     return out
 
 
+# 定位当前模型/分量数的分析输出目录。
 def mica_result_dir(source_dir: Path, cfg: dict) -> Path:
     return _mica_analysis_dir(source_dir, mica_fit(cfg), "comp0")
 
 
+# 允许 λ–τ 单独指定结果目录；否则沿当前 MICA 分支输出。
 def lambda_tau_result_dir(source_dir: Path, cfg: dict, lt: dict) -> Path:
     """Use an explicit analysis result directory without moving legacy outputs."""
     if lt.get("result_dir"):
@@ -161,14 +177,17 @@ def lambda_tau_result_dir(source_dir: Path, cfg: dict, lt: dict) -> Path:
     return out
 
 
+# 相对延迟 Δτ=τ0[(λ/λ0)^β−1]；参考波段为零是定义，不是零尺寸盘。
 def tau_model(wave, tau0, beta, lambda0):
     return tau0 * ((np.asarray(wave, float) / float(lambda0)) ** beta - 1.0)
 
 
+# 同一幂律差形式用于中心二阶矩，幅度 moment20 单位为天²，指数为 γ。
 def moment2_model(wave, moment20, gamma, lambda0):
     return moment20 * ((np.asarray(wave, float) / float(lambda0)) ** gamma - 1.0)
 
 
+# Gaussian 专用兼容入口，实际委托通用混合核矩计算。
 def gaussian_mixture_moments(centers, widths, amplitudes):
     """Return component variances, mixture centroid, and mixture variance."""
     component_variance, _, centroid, variance, fractions = (
@@ -177,6 +196,9 @@ def gaussian_mixture_moments(centers, widths, amplitudes):
     return component_variance, centroid, variance, fractions
 
 
+# 把每分量积分幅度归一成权重，再求混合质心和中心二阶矩。
+# Gaussian: μ=center, Var=width²；k=2 Gamma: μ=center+2width, Var=2width²。
+# 总方差 = 分量内方差加权平均 + 分量质心离散度，不能只平均 width²。
 def transfer_mixture_moments(centers, widths, amplitudes, model):
     """Return component M2, component M1, mixture M1, and mixture M2."""
     centers = np.asarray(centers, float)
@@ -219,6 +241,7 @@ def transfer_mixture_moments(centers, widths, amplitudes, model):
     return component_variance, component_centroid, mixture_centroid, mixture_variance, fractions
 
 
+# 按该波段归一化权重有放回抽样，生成用于传播的等权样本。
 def sample_band(values, weights, nsamp, rng):
     values = np.asarray(values, float)
     weights = np.asarray(weights, float)
@@ -226,12 +249,16 @@ def sample_band(values, weights, nsamp, rng):
     return rng.choice(values, nsamp, replace=True, p=weights)
 
 
+# 固定 β 时模型对 τ0 线性；每行延迟抽样投影到 x_b=(λ_b/λ0)^β−1。
+# τ0=Σ(w_b x_b τ_b)/Σ(w_b x_b²)，权重来自各波段摘要误差；这是后验传播而非新联合 MCMC。
 def fixed_beta_posterior(draws, waves, sigma, lambda0, beta):
     x = (waves / lambda0) ** beta - 1.0
     w = 1.0 / sigma**2
     return (draws @ (w * x)) / np.sum(w * x * x)
 
 
+# 对 τ0、β 施加边界和可选 log-uniform τ0 先验，再使用逐波段双侧误差似然。
+# 预测在观测中位值哪一侧就选择哪一侧 σ；此处没有完整跨波段协方差矩阵。
 def free_beta_log_probability(
     theta,
     waves,
@@ -273,6 +300,9 @@ def free_beta_log_probability(
     return float(log_prior - 0.5 * np.sum(((median_tau - predicted) / sigma) ** 2))
 
 
+# SciPy 先优化找初始高概率点，再用 emcee 联合采样 τ0 与 β，保留二者相关性。
+# 若在 log τ0 坐标采样，显式加入坐标变换的 Jacobian；输出仍为物理 τ0。
+# 诊断包括接受率、自相关时标、边界占比和相关系数；有限链诊断不是物理可识别性证明。
 def joint_free_beta_posterior(
     waves,
     median_tau,
@@ -479,6 +509,7 @@ def joint_free_beta_posterior(
     return samples, log_probability, diagnostics
 
 
+# 优先读取显式 posterior_input，兼容旧 input.txt，否则读已收集的 mica_tf0_posterior。
 def posterior_input(source_dir: Path, cfg: dict, lt: dict) -> Path:
     if lt.get("posterior_input"):
         return rel(source_dir, lt["posterior_input"])
@@ -489,6 +520,7 @@ def posterior_input(source_dir: Path, cfg: dict, lt: dict) -> Path:
     return mica_collection_dir(source_dir, cfg) / "mica_tf0_posterior.txt"
 
 
+# 确定参考波段 λ0：配置优先，缺值才从后验波长列读取；所有波长需同一参考系。
 def reference(cfg: dict, lt: dict, posterior: pd.DataFrame) -> tuple[str, float]:
     mica = mica_fit(cfg)
     band = str(lt.get("lambda0_band", mica.get("driver", cfg.get("reference_band"))))
@@ -500,6 +532,7 @@ def reference(cfg: dict, lt: dict, posterior: pd.DataFrame) -> tuple[str, float]
     return band, float(posterior.loc[posterior["band"].astype(str) == band, "lambda_obs"].iloc[0])
 
 
+# 优先源级 response_bands，回退当前 MICA responses，并保持顺序去重。
 def configured_response_bands(cfg: dict) -> list[str]:
     """Return the response-band selection used by MICA and downstream fits."""
     mica = mica_fit(cfg)
@@ -509,10 +542,12 @@ def configured_response_bands(cfg: dict) -> list[str]:
     return list(dict.fromkeys(str(band) for band in (values or [])))
 
 
+# 把 standard/slim 等别名归一到 4/3、2、free 等拟合键。
 def normalized_model(value) -> str:
     return MODEL_ALIASES.get(str(value), str(value))
 
 
+# 决定未带后缀的 absolute_lag 文件代表哪个模型，并检查固定 b 与 β=1/b 一致。
 def distance_lag_model(cfg: dict, lt: dict, models: list[str]) -> str:
     """
     Select the absolute-lag model used downstream by disk_distance.py.
@@ -552,6 +587,9 @@ def distance_lag_model(cfg: dict, lt: dict, models: list[str]) -> str:
     return selected
 
 
+# 核对驱动、核族、分量数、样本编号和权重，再逐波段摘要及抽样。
+# 每个波段独立重抽样，返回 draws 的同行不再是原始 MICA 联合后验的同一行。
+# 因此这里保存各波段边缘分布，但不保存原后验的跨波段相关性。
 def posterior_matrix(posterior, cfg, ref_band, nsamp, seed):
     rng = np.random.default_rng(seed)
     waves_cfg = cfg.get("bands", {}) or {}
@@ -656,6 +694,7 @@ def posterior_matrix(posterior, cfg, ref_band, nsamp, seed):
     return bands, waves, draws, sigma, median_tau, err_low, err_high
 
 
+# 读取二阶中心矩的可选分析配置；未 enabled 时不开展该分支。
 def second_moment_config(lt: dict) -> dict:
     sm = dict(lt.get("second_moment", {}) or {})
     inherited = (
@@ -674,12 +713,14 @@ def second_moment_config(lt: dict) -> dict:
     return sm
 
 
+# 定位含各核分量参数的长表，零阶/二阶矩必须从它读取，不从质心摘要反推。
 def component_posterior_input(source_dir: Path, cfg: dict, sm: dict) -> Path:
     if sm.get("posterior_input"):
         return rel(source_dir, sm["posterior_input"])
     return mica_collection_dir(source_dir, cfg) / "mica_component_posterior.txt"
 
 
+# 读取增益零阶矩分支配置，与 λ–τ 主分支分开控制。
 def moment0_config(lt: dict) -> dict:
     m0 = dict(lt.get("moment0", {}) or {})
     for key in ("nsamp", "seed"):
@@ -688,6 +729,9 @@ def moment0_config(lt: dict) -> dict:
     return m0
 
 
+# 只对 native tf0 的物理增益拟合相对 SED：G(λ)=(λ/λ0)^η，G(λ0)=1。
+# 自由 η 在 log G–log λ 空间作加权线性传播，σ_log≈σ_G/G 为一阶近似。
+# 输出增益后验、各波段点、指数摘要与图；此处的 η 不是盘温度指数 b。
 def run_moment0(
     source_dir: Path,
     cfg: dict,
@@ -875,6 +919,9 @@ def run_moment0(
     print(out_dir / "moment0_comp0.png")
 
 
+# 先按 band/sample 对齐每个分量，再由宽度与质心计算各分量和总核的中心二阶矩。
+# Gaussian/Exponential 的分量方差为 width²，k=2 Gamma 为 2width²；总核再加质心离散度。
+# 导出的 moment2 是 Var(τ)，不是原点二阶矩 E[τ²]；下游推断目前限制 native comp0。
 def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Calculate component and total central second moments sample by sample."""
     mica = mica_fit(cfg)
@@ -1043,11 +1090,13 @@ def transfer_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> 
     ).drop(columns="_component_order").reset_index(drop=True)
 
 
+# 保留旧 Gaussian API 名称，计算由支持多核族的 transfer_moment2_posterior 完成。
 def gaussian_moment2_posterior(component_posterior: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Backward-compatible entry point retained for existing callers/tests."""
     return transfer_moment2_posterior(component_posterior, cfg)
 
 
+# 把 moment2 暂映射到通用 tau 列复用检查/抽样，变量单位仍是天²。
 def moment2_posterior_matrix(moment_posterior, cfg, ref_band, component, nsamp, seed):
     selected = moment_posterior[moment_posterior["component"].eq(component)].copy()
     if selected.empty:
@@ -1056,10 +1105,12 @@ def moment2_posterior_matrix(moment_posterior, cfg, ref_band, component, nsamp, 
     return posterior_matrix(selected, cfg, ref_band, nsamp, seed)
 
 
+# 规范 8/3、4、free 等二阶矩指数模型键。
 def normalized_moment2_model(value) -> str:
     return MOMENT2_MODEL_ALIASES.get(str(value), str(value))
 
 
+# 将 moment20/γ 的边界和先验映射到同一二维幂律采样器，再把诊断名称改回矩变量。
 def joint_free_gamma_posterior(
     waves,
     median_moment2,
@@ -1093,6 +1144,7 @@ def joint_free_gamma_posterior(
     return samples, log_probability, renamed
 
 
+# 按后验分位数报告幅度/指数，残差 χ² 基于摘要误差，不是原始光变的全似然。
 def moment2_summary_rows(
     component,
     models,
@@ -1133,6 +1185,7 @@ def moment2_summary_rows(
     return rows
 
 
+# 展示已算好的二阶矩点与模型关系；不在绘图中重新采样。
 def plot_moment2_fit(points, fit_summary, lambda0, out_dir):
     fig, axes = plt.subplots(
         1,
@@ -1191,6 +1244,8 @@ def plot_moment2_fit(points, fit_summary, lambda0, out_dir):
     plt.close(fig)
 
 
+# 可选二阶矩主入口：分量长表 → 矩后验 → 固定/自由 γ → 摘要和图。
+# 目前仅允许 tf0，拒绝把 total 或其他分量默认解释为同一盘响应方差。
 def run_second_moment(
     source_dir: Path,
     cfg: dict,
@@ -1424,6 +1479,7 @@ def run_second_moment(
     print(out_dir / "moment2_components.png")
 
 
+# 汇总 τ0、β 分位数和基于中位点的残差诊断，固定/自由模型独立列出。
 def summary_rows(models, tau0_post, beta_post, waves, median_tau, sigma, lambda0):
     rows = []
     for key in models:
@@ -1453,6 +1509,7 @@ def summary_rows(models, tau0_post, beta_post, waves, median_tau, sigma, lambda0
     return rows
 
 
+# 画相对延迟–观测波长关系；参考点为定义的零，不当作额外有误差观测。
 def plot_fit(points, fit_summary, lambda0, out_dir):
     fig, ax = plt.subplots(figsize=(6.3, 4.6), constrained_layout=True)
     response = points[~points["is_ref"]]
@@ -1491,6 +1548,8 @@ def plot_fit(points, fit_summary, lambda0, out_dir):
     plt.close(fig)
 
 
+# 串接读取、固定/自由指数推断、相对点表和各模型绝对延迟输出，再按配置做零/二阶矩。
+# τ_abs(λ)=τ0(λ/λ0)^β 给出依赖模型的绝对尺度；所有波段共享同一样本的 τ0、β。
 def run(source_dir: Path, cfg: dict, nsamp: int, seed: int, config_section="lambda_tau"):
     lt = cfg.get(config_section, {}) or {}
     inp = posterior_input(source_dir, cfg, lt)
@@ -1550,6 +1609,7 @@ def run(source_dir: Path, cfg: dict, nsamp: int, seed: int, config_section="lamb
             "tau0_beta_correlation"
         ]
     fit_summary["ref_band"] = ref_band
+    # 各模型都有独立输出；selected_model 仅选择通用文件名指向哪个模型，不能把模型差异当独立数据合并。
     selected_model = distance_lag_model(cfg, lt, models)
     fit_summary["used_for_distance"] = fit_summary["fit_model"].eq(selected_model)
 
@@ -1582,6 +1642,7 @@ def run(source_dir: Path, cfg: dict, nsamp: int, seed: int, config_section="lamb
     for key in models:
         tau0 = tau0_post[key]
         beta = beta_post[key]
+        # 相对模型去掉 −1 后才是绝对延迟：参考波段 τ_abs(λ0)=τ0；这一步引入盘幂律假设。
         tau_abs = tau0[:, None] * wave_ratio ** beta[:, None]
         abs_table = pd.DataFrame({
             "sample": np.arange(len(tau0)),
@@ -1677,6 +1738,7 @@ def run(source_dir: Path, cfg: dict, nsamp: int, seed: int, config_section="lamb
         print(out_dir / "free_beta_joint_summary.csv")
 
 
+# 复制配置并路由到指定后验条件分支的长表，保持原源配置不变。
 def branch_analysis_config(
     source_dir: Path,
     cfg: dict,
@@ -1725,6 +1787,7 @@ def branch_analysis_config(
     return branch_cfg
 
 
+# 遍历配置的 MICA 阶段及可选后验分支；稳定分支 seed 便于重复同一传播实验。
 def main():
     ap = argparse.ArgumentParser(description="Fit wavelength-lag relations from the full MICA tf0 posterior.")
     ap.add_argument("source_dir", type=Path)

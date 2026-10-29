@@ -23,6 +23,7 @@ OPTION_KEYS = {'NumberParticles', 'TotalParticles', 'ThreadStepsFactor',
                'BacktrackingLength', 'StrengthEqualPush', 'PTol'}
 
 
+# 对输入/原生扩展计算 SHA256，只用于确认恢复时文件身份，不判断科学正确性。
 def digest(path):
     h = hashlib.sha256()
     with Path(path).open('rb') as f:
@@ -31,6 +32,7 @@ def digest(path):
     return h.hexdigest()
 
 
+# 同目录临时文件写完后替换目标，避免中途退出留下半段 JSON/参数文本。
 def atomic_text(path, text):
     path = Path(path)
     tmp = path.with_name(path.name + f'.tmp-{os.getpid()}')
@@ -38,6 +40,7 @@ def atomic_text(path, text):
     os.replace(tmp, path)
 
 
+# 锁文件放在运行目录外侧，使 fresh 归档目录时锁仍有效；Unix flock 阻止同目录并发写入。
 def acquire_run_lock(rd):
     # Keep the lock outside rd so explicitly archiving a run cannot drop it.
     rd = Path(rd)
@@ -51,6 +54,7 @@ def acquire_run_lock(rd):
     return handle
 
 
+# 解析原生 param_input/OPTIONS 文本，包括少数以注释形式写出的 DNest 配置项。
 def read_settings(path, commented_options=False):
     result = {}
     for line in Path(path).read_text().splitlines():
@@ -73,6 +77,8 @@ def _value(value):
         return value
 
 
+# 比较临时 setup 生成的实际原生配置和旧运行，而不仅比较 YAML 字面值。
+# 允许累计 MaxNumberSaves 增大；数据序列化字节、其他参数及自定义先验必须保持一致。
 def compare_saved_setup(rd, preview_dir):
     """Compare actual pymica serialization before touching the saved run."""
     rd, preview_dir = Path(rd), Path(preview_dir)
@@ -99,6 +105,8 @@ def compare_saved_setup(rd, preview_dir):
             raise ValueError(f'The saved parameter prior differs from the requested prior: {prior}')
 
 
+# 验证采样文本的有限数值、列数和完整换行；指定 required 时只验证已提交的前 N 行。
+# 返回字节边界，恢复可把 checkpoint 之后尚未提交的尾部截去，同时保留备份。
 def _rows(path, columns, required=None):
     """Validate complete numeric rows; only a torn tail after required is ignored."""
     rows, end, headers = 0, 0, 0
@@ -130,6 +138,9 @@ def _rows(path, columns, required=None):
     return {'rows': rows, 'prefix_bytes': end}
 
 
+# 按当前 CDNest 的小端二进制布局解析保存数、步数、层级和粒子状态。
+# 字节数同时依赖层数、总粒子数和参数维数；这是绑定特定原生 ABI 的检查器。
+# checkpoint 未包含完整 RNG 状态，因此通过校验也不承诺与未中断运行逐位一致。
 def read_checkpoint(path, *, ranks, particles, dimension, max_levels=0):
     if sys.byteorder != 'little' or struct.calcsize('P') != 8:
         raise ValueError('This checkpoint reader requires the verified x86-64 MICA layout.')
@@ -140,6 +151,7 @@ def read_checkpoint(path, *, ranks, particles, dimension, max_levels=0):
     if saves < 1 or not 1 <= levels <= 1000 or (max_levels and levels > max_levels):
         raise ValueError('invalid checkpoint count or incompatible level limit')
     total = ranks * particles
+    # 布局拆成头部 + 层级 + 粒子分配/似然 + 分层边界 + 粒子参数，任一维数错误都会改变字节数。
     expected = 12 + 56 * levels + 20 * total + 16 * levels * dimension + 8 * total * dimension
     if len(data) != expected:
         raise ValueError(f'checkpoint has {len(data)} bytes; expected {expected} for the saved MPI/model layout')
@@ -161,6 +173,8 @@ def read_checkpoint(path, *, ranks, particles, dimension, max_levels=0):
             'ranks': ranks, 'bytes': len(data)}
 
 
+# 参数维数 = 驱动的三参数块（系统误差、lnσ、lnτ）+ 每个响应的 (1 个系统误差 + 3×ncomp)。
+# 从已序列化数据的头部读响应数量，兼容单响应与受限联合原型。
 def response_dimension(rd, ncomp):
     """One observed driver and one or more responses in the same MICA dataset."""
     with (Path(rd) / 'data/data_input.txt').open() as stream:
@@ -173,6 +187,8 @@ def response_dimension(rd, ncomp):
     return 3 + (len(counts) - 1) * (1 + 3*ncomp)
 
 
+# 连续光变与响应采样使用不同 OPTIONS、样本文件和 checkpoint 别名。
+# 这里把每 rank 粒子数、步长因子、MPI 数转换为总粒子数和每次保存的步数约束。
 def _layout(rd, phase, ranks, ncomp, mixed):
     if phase == 'response':
         suffix, dimension = f'1d.txt_{ncomp}', response_dimension(rd, ncomp)
@@ -198,6 +214,8 @@ def _layout(rd, phase, ranks, ncomp, mixed):
             'info': rd / 'data' / ('sample_info' + suffix)}
 
 
+# 按保存量从新到旧寻找完整 checkpoint，交叉检查文件名、二进制计数和样本文本前缀。
+# 坏的较新 checkpoint 会记录原因并回退到较旧可用点；不是一律信任最新修改时间。
 def _choose(rd, phase, ranks, ncomp, mixed, target):
     layout = _layout(rd, phase, ranks, ncomp, mixed)
     pattern = re.compile(re.escape(layout['alias']) + r'_(\d+)$')
@@ -213,6 +231,7 @@ def _choose(rd, phase, ranks, ncomp, mixed, target):
             if count > target:
                 raise ValueError('checkpoint exceeds the requested cumulative target')
             # Native CDNest writes and reads only 32 bits of its 64-bit counter.
+            # 计数器虽在原生程序中更宽，这个文件仅保存低 32 位；超过范围时拒绝不可靠恢复。
             expected_steps = max(count, math.ceil(count * layout['interval'] / layout['batch'])) * layout['batch']
             if expected_steps >= 2**32 or cp['global_steps_low32'] != expected_steps:
                 raise ValueError('native checkpoint step counter is inconsistent or exceeds its 32-bit format')
@@ -229,6 +248,8 @@ def _choose(rd, phase, ranks, ncomp, mixed, target):
                      '; '.join(f"{Path(x['path']).name}: {x['reason']}" for x in rejected[:3]))
 
 
+# 响应拟合依赖固定的连续光变后验；同时核对 #N 头、有限三列和已提交先验记录。
+# 一旦响应阶段开始，不可悄悄重新估计连续光变先验后继续旧响应链。
 def _validate_prior_file(rd):
     path = rd / 'data/posterior_sample.txt'
     lines = path.read_text().splitlines()
@@ -250,11 +271,15 @@ def _validate_prior_file(rd):
             raise ValueError('Continuum posterior/prior no longer matches its saved commitment.')
 
 
+# 恢复身份不包含目标保存数，因此允许延长同一运行；模型/先验/输入仍属于身份的一部分。
 def _signature(settings):
     return json.loads(json.dumps({k: v for k, v in settings.items()
                                  if k not in {'data', 'data_file', 'max_num_saves'}}, sort_keys=True))
 
 
+# 只读决策层：确认新建、跳过、响应重开、连续光变恢复、响应恢复或 post/plot。
+# 优先检查固定输入与已登记身份，再寻找已提交 checkpoint；此函数本身不截断或搬移文件。
+# max_num_saves 是希望最终拥有的累计保存量，不是本次额外增加多少行。
 def plan_run(rd, *, action, mpi_size, mixed, ncomp, target_saves,
              input_files, settings, native_extension):
     rd = Path(rd)
@@ -289,6 +314,7 @@ def plan_run(rd, *, action, mpi_size, mixed, ncomp, target_saves,
                 raise ValueError(f'Saved run file was changed externally: {name}')
         state['frozen_files'] = old.get('frozen_files', {})
         if action in {'post', 'plot'}:
+            # 仅后处理可放宽当前 MPI 数/扩展哈希匹配；仍检查原输入、模型设置和冻结文件。
             state['mpi_size'] = old['mpi_size']
             state['native_sha256'] = old['native_sha256']
         if action == 'run' and old.get('status') == 'complete' and target_saves == old['target_saves']:
@@ -349,6 +375,8 @@ def plan_run(rd, *, action, mpi_size, mixed, ncomp, target_saves,
     raise ValueError('The previous run stopped before a usable checkpoint. Use fresh to archive it and start again.')
 
 
+# 执行已验证计划：fresh 把旧目录改名归档，恢复则备份参数/状态和采样尾部。
+# 只有 checkpoint 对应的已验证样本前缀被保留用于恢复；原始全文在 resume_history 中可追溯。
 def apply_plan(rd, plan):
     rd = Path(rd)
     stamp = time.strftime('%Y%m%dT%H%M%S') + f'-{time.time_ns() % 1000000000:09d}'
@@ -396,6 +424,7 @@ def apply_plan(rd, plan):
     atomic_text(backup / 'resume.json', json.dumps(plan, indent=2) + '\n')
 
 
+# 运行开始时写入身份、目标和冻结文件指纹，用来拒绝下一次不兼容的恢复。
 def record_started(rd, plan):
     rd = Path(rd)
     state = dict(plan['state'])
@@ -412,6 +441,8 @@ def record_started(rd, plan):
     atomic_text(rd / STATE_FILE, json.dumps(state, indent=2) + '\n')
 
 
+# 完成判据是预期样本数、后验/证据及按模式要求的重建产物齐备，并保存连续光变先验。
+# 这属于文件完整性与流程完成检查，不等价于收敛诊断，也不保证延迟估计无偏。
 def record_complete(rd, plan):
     rd = Path(rd)
     # Native code has some exit(0) failure paths. Completion needs real products.

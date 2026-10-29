@@ -1,3 +1,5 @@
+# 命令行调度层：sources 会启动源拟合，h0 会重新拟合基线 H0，plot 只读已保存结果画图。
+# fcntl 文件锁防止同一输出目录并发写入；子进程日志、状态 JSON 用于恢复和排查。
 """Run or replot the frozen shared-SED, one-distance-per-source analysis."""
 from __future__ import annotations
 import argparse
@@ -10,10 +12,12 @@ import sys
 import time
 
 
+# 写控制/工作进程状态；读取这些 JSON 可定位失败源，无须启动科学计算。
 def write_json(path, data):
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+# 对结果目录取非阻塞独占锁；已有控制器持锁时直接报错，退出上下文时释放。
 @contextmanager
 def output_lock(path):
     import fcntl
@@ -29,6 +33,7 @@ def output_lock(path):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+# 对单源加锁后调用 source_run；失败时保留已经完成且兼容性检查失败的旧基线。
 def run_worker(settings, source):
     from .inference import source_run
     folder = settings.output_dir / "sources" / source
@@ -44,6 +49,7 @@ def run_worker(settings, source):
             raise
 
 
+# 先验证可复用缓存，只为待拟合源显式编译 C 内核，并按 parallel 上限启动独立进程。
 def run_sources(settings):
     from .config import PROJECT_ROOT
     from .inference import validate_cached_source
@@ -90,6 +96,7 @@ def run_sources(settings):
         raise RuntimeError("Source fit failed; inspect its log and rerun to resume")
 
 
+# 根据 step 串接源拟合、H0、绘图和保存结果核查，记录完整/失败状态；不是只读入口。
 def execute(settings, step, source=None):
     from . import MODEL_VERSION
     out = settings.output_dir
@@ -136,6 +143,7 @@ def execute(settings, step, source=None):
             step=step, source=source, model_version=MODEL_VERSION))
 
 
+# 解析前台/后台/内部 worker 三类入口；在导入数值库前限制 BLAS 线程，避免进程数乘线程数。
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)

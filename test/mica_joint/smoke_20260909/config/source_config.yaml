@@ -1,0 +1,41 @@
+source: NGC2617_a
+reference_band: W2
+response_bands: &id001
+- M2
+- W1
+- U
+- B
+- V
+mica_stages:
+- mica_gamma2_broad
+mica_gamma2_broad:
+  output_root: /home/leonhard/sci001/test/mica_joint/smoke_20260909/runs
+  prepared_dir: /home/leonhard/sci001/NGC2617_a/fflux/host_sub
+  driver: W2
+  responses: *id001
+  run_template: run_{driver}_to_{band}_{ncomp}comp_{type_tf}
+  ncomp: 2
+  type_tf: gamma
+  component_order: moment1
+  type_lag_prior: 4
+  lag_limit:
+  - -10.0
+  - 100.0
+  lag_prior:
+  - - -10.0
+    - 100.0
+  - - -10.0
+    - 100.0
+  width_limit: null
+  width_prior: null
+  flag_lag_posivity: false
+  flag_trend: 0
+  max_num_saves: 100
+  num_particles: 1
+  ptol: 0.1
+  mpi_per_band: 2
+  max_parallel: 1
+  fit_only: true
+  plot_decomp: false
+  posterior_branches:
+    enabled: false

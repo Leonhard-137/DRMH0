@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot component-0 FWHM versus centroid for all Mrk 817 two-Gamma bands."""
 
+# Mrk817 旧两 Gamma 的 comp0 FWHM-质心散点图，颜色给面积占比。
+# tau0<tau1 是对原生标签的筛选；FWHM=2.446386w，不能把 FWHM 直接叫延迟。
 from __future__ import annotations
 
 import argparse
@@ -23,6 +25,8 @@ BANDS = ("UVM2", "UVW1", "U", "B", "V")
 FWHM_PER_W = 2.446386
 
 
+# 列4/6、7/9分别存 logA/logw；取指数后得到正面积和尺度，tau=c+2w。
+# 后续掩码保留原生 tau0<tau1，不逐样本重标记；区域比例必须说明分母来自原始还是已筛样本。
 def load_band(archive: zipfile.ZipFile, band: str) -> dict[str, np.ndarray]:
     member = (
         f"2comp/run_UVW2_to_{band}_2comp_gamma/data/"

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 三个固定示例源的二阶矩图；数据来自已保存的 tf0 二阶矩点和拟合摘要。
+# 此处的 gamma=8/3、4、free 描述波长标度，与传递函数族名称要区分。
 """Build the three-source short-component second-moment paper figure."""
 
 from __future__ import annotations
@@ -19,11 +21,13 @@ MODELS = {
 }
 
 
+# 相对二阶矩幂律；lambda 和 lambda0 必须使用同一波长单位。
 def moment2_model(wavelength, moment20, gamma, lambda0):
     wavelength = np.asarray(wavelength, dtype=float)
     return moment20 * ((wavelength / float(lambda0)) ** gamma - 1.0)
 
 
+# 当前实现固定访问 gamma2 目录，不自动跟随 main.py 的 --stage。
 def source_paths(workspace: Path, source: str) -> tuple[Path, Path]:
     root = (
         workspace
@@ -42,6 +46,7 @@ def source_paths(workspace: Path, source: str) -> tuple[Path, Path]:
     )
 
 
+# 把已有点、误差和三类拟合曲线绘出，不重采样或重新拟合。
 def plot(workspace: Path, output: Path) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(10.8, 3.75))
     model_handles = []

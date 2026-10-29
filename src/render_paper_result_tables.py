@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# 从 relaxed-Gamma 和 shared-SED 的已完成结果生成论文表、宏与来源清单。
+# 本模块使用 RMS SED（lambda*R），与 sed_u_diagnostics 的差分光谱入口须分清。
+# 各波段距离只是诊断；论文联合 H0 读取每个源一个 shared-SED 光度距离。
 """Render paper tables from the completed relaxed-Gamma result family.
 
 No MICA, FFA or lag inference is run. The U diagnostic is an analytic
@@ -34,6 +37,7 @@ def tex_name(source):
     return base
 
 
+# 参数 low/high 已是相对中心值的非负误差量，不是区间端点。
 def interval(median, low, high, digits=3):
     values = np.asarray([median, low, high], float)
     if not np.isfinite(values).all() or np.any(values[1:] < 0):
@@ -73,6 +77,7 @@ def table(columns, caption, labels, head, rows, explanation, size="footnotesize"
     ])
 
 
+# 按指定键筛出唯一行；重复或缺失结果属于身份/版本不一致，不能取第一行凑数。
 def only(frame, **criteria):
     selected = frame
     for column, value in criteria.items():
@@ -82,6 +87,8 @@ def only(frame, **criteria):
     return selected.iloc[0]
 
 
+# 在每个联合 FFA 样本中，用非U波段的 lambda*R 做对数幂律回归并预测U。
+# 权重来自边际 RMS 相对误差近似；保留样本内关联，但回归权重矩阵是对角的。
 def u_rms_diagnostic(source, stage_name, points_path, posterior_path):
     points = pd.read_csv(points_path).sort_values("wavelength_angstrom")
     posterior = pd.read_csv(posterior_path, sep=r"\s+")
@@ -115,6 +122,7 @@ def u_rms_diagnostic(source, stage_name, points_path, posterior_path):
     intercept = ybar - alpha * xbar
     predicted = np.exp(intercept + alpha * x[u_index])
     ratio = values[:, u_index] / predicted
+    # 百分比过量定义：100*(实际U/非U拟合预测U-1)，并非BLR贡献比例的直接测量。
     percentages = 100 * (ratio - 1)
     row = dict(source=source, stage=stage_name, quantity="lambda_R_lambda",
                fit_model="free", excluded_band="U", fit_bands=";".join(
@@ -130,6 +138,8 @@ def u_rms_diagnostic(source, stage_name, points_path, posterior_path):
     return row
 
 
+# 核对配置路径、stage、样本身份和量定义后生成表格。
+# 普通保存距离在这里乘(1+z)得到D_L；shared-SED已存D_L，不再乘一次。
 def render(workspace, downstream, output):
     sample_path = workspace / "DRMH0/tables/sample_observations.csv"
     summary_path = downstream / "summary.csv"

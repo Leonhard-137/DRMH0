@@ -13,6 +13,8 @@ import numpy as np
 BRANCH_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
+# 为条件后验分析提供默认开关、重采样数、随机种子和低质量提示阈值。
+# 这些参数控制后处理，不改变原始 MICA 拟合或先验。
 def branch_config(fit: Mapping) -> dict:
     """Return a normalized posterior-branch configuration."""
     config = dict(fit.get("posterior_branches", {}) or {})
@@ -25,6 +27,7 @@ def branch_config(fit: Mapping) -> dict:
     return config
 
 
+# 只接纳启用且带非空 ranges 的命名区域；安全 ID 同时用于输出目录名。
 def branch_definitions(fit: Mapping) -> dict[str, dict]:
     """Validate and return enabled branch definitions in YAML order."""
     config = branch_config(fit)
@@ -56,6 +59,7 @@ def branch_definitions(fit: Mapping) -> dict[str, dict]:
     return definitions
 
 
+# 生成受限于结果目录内部的相对路径，拒绝绝对路径和父目录跳转。
 def branch_result_relative_dir(fit: Mapping, branch_id: str) -> Path:
     """Return a safe path relative to the active MICA result directory."""
     config = branch_config(fit)
@@ -77,6 +81,8 @@ def branch_result_relative_dir(fit: Mapping, branch_id: str) -> Path:
     return path
 
 
+# 把 (ncomp, nsamples) 参数矩阵展开为可筛选变量：center、width、A、A/sum(A)、q=center/width。
+# 可选 tau 是真实核质心；双分量还提供起点差/中心差及绝对值，不能把它们默认解释为质心差。
 def posterior_features(
     centers,
     widths,
@@ -115,6 +121,7 @@ def posterior_features(
     return features
 
 
+# 允许 [low, high] 或命名边界形式；缺一侧代表半无限区间，边界仍须是有限数。
 def _range_bounds(branch_id: str, feature: str, value) -> tuple[float | None, float | None]:
     if isinstance(value, Mapping):
         unexpected = sorted(set(value).difference({"min", "max"}))
@@ -143,6 +150,8 @@ def _range_bounds(branch_id: str, feature: str, value) -> tuple[float | None, fl
     return low, high
 
 
+# 一个分支内各条件取逻辑 AND；每项使用 low<=x<high，且要求被筛选变量有限。
+# 不同分支之间没有互斥约束，所以总质量可能重叠；未被 ranges 使用的变量不会在此做有限性筛除。
 def branch_mask(
     branch_id: str,
     definition: Mapping,
@@ -172,6 +181,7 @@ def branch_mask(
     return mask
 
 
+# 条件区域内重新把保留权重归一化；拒绝负权重、非有限权重及零总质量。
 def normalized_weights(weights) -> np.ndarray:
     weights = np.asarray(weights, float)
     if weights.ndim != 1:
@@ -184,11 +194,14 @@ def normalized_weights(weights) -> np.ndarray:
     return weights / total
 
 
+# 权重集中度 ESS=1/sum(w_i^2)；函数先把输入权重归一化，再代入公式。
+# 它不是考虑链自相关后的 MCMC ESS，也不能用来单独证明收敛。
 def effective_sample_size(weights) -> float:
     weights = normalized_weights(weights)
     return float(1.0 / np.sum(weights**2))
 
 
+# 用 SHA256 而非 Python hash 生成稳定偏移，使同一分支/波段跨进程运行仍可复现重采样。
 def stable_seed_offset(branch_id: str, modulus: int = 1_000_000_007) -> int:
     """Return a reproducible seed offset independent of Python hash randomization."""
     digest = hashlib.sha256(str(branch_id).encode("utf-8")).digest()

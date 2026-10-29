@@ -1,0 +1,194 @@
+{
+  "defaults": {
+    "nr": 50,
+    "nt": 250,
+    "efficiency": 0.1,
+    "inclination_deg": 30.0,
+    "rin_rg": 6.0,
+    "umin": 1.0,
+    "umax": 1000.0
+  },
+  "units": {
+    "mass_msun": "solar masses",
+    "distance_mpc": "luminosity distance in Mpc; not comoving or angular-diameter distance",
+    "redshift": "dimensionless adopted source redshift; not a uniform flow-corrected cosmological redshift",
+    "eddington_ratio": "dimensionless L_bol/L_Edd normalization, with formal NK22 accretion normalization for Mrk142",
+    "efficiency": "dimensionless eta in Mdot = eddington_ratio * L_Edd / (eta*c^2)",
+    "inclination_deg": "degrees from the disk axis",
+    "rin_rg": "R_in / (G*M_BH/c^2)",
+    "umin": "R_min / R_in; numerical mapping lower boundary",
+    "umax": "R_max / R_in; numerical mapping boundary, not a measured disk truncation"
+  },
+  "method": {
+    "scope": "Fixed-input NK22/AGN-STORM-2 temperature-mapping method transfer to the exact ten local source/segment labels; not ten exact reproductions of original paper data sets.",
+    "fit_physical_parameters": false,
+    "use_mica_h0_distance": false,
+    "radial_lower_boundary_default": 1.0,
+    "radial_grid": "50 logarithmically spaced cells from source-specific umin to umax. Mrk142 uses [20,20000]; every other source uses umin=1. The shared operator now supports p.get('umin',1).",
+    "radial_grid_qualification": "The source-specific ranges follow NK22 where available, but 50 cells over [1,400] is not NK22's trimming of a larger grid at unchanged spacing.",
+    "cosmological_distance_fallback": {
+      "applies_to": ["Mrk335", "Mrk279_b", "NGC2617_a"],
+      "model": "flat LambdaCDM without radiation",
+      "H0_km_s_Mpc": 70.0,
+      "Om0": 0.3,
+      "Ode0": 0.7,
+      "Tcmb0_K": 0.0,
+      "formula": "D_L=(1+z)*(c/H0)*integral_0^z [Om0*(1+zprime)^3+Ode0]^(-1/2) dzprime",
+      "peculiar_velocity_or_flow_correction": "none; distances are assumed normalization inputs, not independent measurements"
+    },
+    "shared_assumptions": [
+      "eta=0.1, i=30 deg, and R_in=6 R_g are common mapping conventions, not source-by-source inclination or spin measurements.",
+      "Mass, distance, redshift, and Eddington ratio remain fixed; uncertainties and luminosity-state changes are not propagated by this parameter file.",
+      "Equal nr, nt, and regularization coefficients do not imply equal physical resolution or equal effective smoothing across sources.",
+      "Recovered temperature patterns are conditional on the adopted blackbody disk kernels; these inputs do not identify variability as disk, BLR, or propagating waves."
+    ]
+  },
+  "sources": {
+    "Mrk817_a": {
+      "params": {"mass_msun": 38500000.0, "distance_mpc": 136.0, "redshift": 0.031455, "eddington_ratio": 0.2, "umax": 1000.0},
+      "provenance": {
+        "basis": "Preserve the existing Mrk817 AGN STORM 2 VI reproduction inputs.",
+        "mass_msun": "Neustadt et al. 2024 Table 1: 3.85e7 Msun; adopted there from Kara et al. 2021.",
+        "distance_mpc": "Neustadt et al. 2024 Table 1: D_L=136 Mpc, calculated cosmologically in that paper; retained verbatim, not recomputed with the fallback cosmology.",
+        "redshift": "Neustadt et al. 2024 Table 1: 0.031455; deliberately supersedes the rounded 0.031 in Mrk817_a/config/source_config.yaml for this mapping test.",
+        "eddington_ratio": "Neustadt et al. 2024 Table 1: 0.2.",
+        "umax": "Existing validated reproduction: u=1..1000, nr=50.",
+        "references": ["https://arxiv.org/html/2310.01497"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/outputs/config.json", "/home/leonhard/sci001/Mrk817_a/config/source_config.yaml"]
+      },
+      "warnings": ["The Mrk817_a source label/selected segment is not by itself evidence that its input rows equal the full 17-band paper campaign; data selection is determined separately."]
+    },
+    "Mrk142": {
+      "params": {"mass_msun": 1698243.652461746, "distance_mpc": 202.0, "redshift": 0.045, "eddington_ratio": 25.0, "umin": 20.0, "umax": 20000.0},
+      "provenance": {
+        "basis": "NK22 Table 1 and Sections 2.3-2.4, retaining its formal thin-disk normalization.",
+        "mass_msun": "10^6.230 Msun from NK22 Table 1.",
+        "distance_mpc": "D_L=202 Mpc from NK22 Table 1; original table value retained.",
+        "redshift": "z=0.045 from NK22 Table 1; local source_config.yaml uses 0.0446, which is not substituted here.",
+        "eddington_ratio": "NK22 explicitly takes dimensionless Mdot*c^2/L_Edd=250 from Li et al. 2018 and eta=0.1, giving formal lambda_Edd=25. This is a mapping normalization, not a fresh observed bolometric-luminosity measurement.",
+        "umin": "20 from NK22 Figure 1; supported by the main branch's backward-compatible umin extension.",
+        "umax": "20000 from NK22 Figure 1; both published range endpoints are used.",
+        "paper_radial_range_u": [20.0, 20000.0],
+        "implemented_radial_range_u": [20.0, 20000.0],
+        "references": ["https://arxiv.org/abs/2201.10565v2", "https://arxiv.org/abs/2005.03685"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/reference/neustadt_kochanek2022.txt", "/home/leonhard/sci001/Mrk142/raw/info.txt"]
+      },
+      "warnings": [
+        "Super-Eddington accretion invalidates a strict radiatively efficient thin-disk interpretation; treat the recovered map as a conditional formal benchmark.",
+        "Local standard-lag benchmark M=1.95e6 Msun and L_bol/L_Edd=3.40 uses a different literature compilation; it is intentionally not substituted for the NK22 mapping parameters."
+      ]
+    },
+    "Mrk335": {
+      "params": {"mass_msun": 17000000.0, "distance_mpc": 112.68416572471587, "redshift": 0.0258, "eddington_ratio": 0.1, "umax": 1000.0},
+      "provenance": {
+        "basis": "Local documented thin-disk benchmark, cross-checked against Wang et al. 2025 Table 1; applied to the local Kara et al. 2023 campaign.",
+        "mass_msun": "1.70e7 Msun in Mrk335/raw/info.txt; rounded from log10(M/Msun)=7.230 in Wang et al. 2025 Table 1.",
+        "distance_mpc": "Calculated luminosity distance using z=0.0258, flat LambdaCDM, H0=70 km/s/Mpc and Om0=0.3; not an independent distance measurement.",
+        "redshift": "0.0258 from Mrk335/config/source_config.yaml; also verified in a published reverberation-mapping sample table linked below. Wang et al. 2025 rounds it to 0.026.",
+        "eddington_ratio": "0.100 in local raw/info.txt and Wang et al. 2025 Table 1 (its reference chain includes Tripathi et al. 2020).",
+        "umax": "Adopted common mapping upper boundary 1000; not a source-specific measured outer radius.",
+        "references": ["https://arxiv.org/html/2511.05792v1", "https://arxiv.org/html/2302.07342", "https://academic.oup.com/view-large/431858107"],
+        "local_evidence": ["/home/leonhard/sci001/Mrk335/raw/info.txt", "/home/leonhard/sci001/Mrk335/config/source_config.yaml"]
+      },
+      "warnings": ["Mass and Eddington ratio follow the project's documented compilation, not the distinct parameters used for the theoretical lag example in Kara et al. 2023.", "The luminosity distance is cosmology-assumed, with no peculiar-velocity or flow correction."]
+    },
+    "F9_a": {
+      "params": {"mass_msun": 254683025.25850445, "distance_mpc": 210.0, "redshift": 0.047, "eddington_ratio": 0.02, "umax": 400.0},
+      "provenance": {
+        "basis": "NK22 Table 1 physical parameters transferred to the local later Fairall9 segment.",
+        "mass_msun": "10^8.406 Msun from NK22 Table 1.",
+        "distance_mpc": "D_L=210 Mpc from NK22 Table 1; original table value retained.",
+        "redshift": "0.047 from NK22 Table 1; not the 0.04587331 value in the local H0 source configuration.",
+        "eddington_ratio": "0.02 from NK22 Table 1, whose Section 2.4 attributes it to the X-ray SED of Vasudevan and Fabian 2009.",
+        "umax": "400 from NK22 Section 2.3/Figure 1. NK22 trims its original grid above 400 without changing spacing; sample10 instead requests 50 cells over [1,400].",
+        "references": ["https://arxiv.org/abs/2201.10565v2", "https://arxiv.org/html/2511.05792v1", "https://arxiv.org/abs/2407.09445"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/reference/neustadt_kochanek2022.txt", "/home/leonhard/sci001/F9_a/raw/info.txt", "/home/leonhard/sci001/F9_a/config/source_config.yaml"]
+      },
+      "warnings": ["Local F9_a is a later Swift segment (MJD 58550.52-59259.11), not NK22's earlier Swift plus optical campaign: this is method transfer.", "The local late-campaign benchmark uses M=2.60e8 Msun and lambda_Edd=0.035; NK22's older normalization is deliberately retained and is not asserted to be a simultaneous luminosity estimate.", "50 radial cells over [1,400] do not exactly reproduce NK22's trimmed radial discretization."]
+    },
+    "Mrk279_b": {
+      "params": {"mass_msun": 27227013.080779098, "distance_mpc": 133.67825257381224, "redshift": 0.0305, "eddington_ratio": 0.21, "umax": 1000.0},
+      "provenance": {
+        "basis": "Wang et al. 2025 Table 1 and the local documented segment-2 benchmark.",
+        "mass_msun": "10^7.435 Msun from Wang et al. 2025 Table 1 and Mrk279_b/raw/info.txt.",
+        "distance_mpc": "Calculated D_L in the documented flat LambdaCDM fallback at z=0.0305; not a MICA-derived distance.",
+        "redshift": "0.0305 from Mrk279_b/config/source_config.yaml; this systemic redshift is also explicit in Gabel et al. 2005 Table 1 note b. Wang et al. 2025 rounds it to 0.030.",
+        "eddington_ratio": "0.210 from Wang et al. 2025 Table 1; a literature compilation, not a new luminosity determination for this segment.",
+        "umax": "Adopted common mapping upper boundary 1000.",
+        "references": ["https://arxiv.org/html/2511.05792v1", "https://www.slac.stanford.edu/pubs/slacpubs/11000/slac-pub-11072.pdf"],
+        "local_evidence": ["/home/leonhard/sci001/Mrk279_b/raw/info.txt", "/home/leonhard/sci001/Mrk279_b/config/source_config.yaml"]
+      },
+      "warnings": ["Historical mass/accretion inputs are transferred to the local Swift segment 2, not refitted to its luminosity state.", "The luminosity distance is cosmology-assumed, with no peculiar-velocity or flow correction."]
+    },
+    "Mrk509": {
+      "params": {"mass_msun": 112201845.43019652, "distance_mpc": 151.0, "redshift": 0.034, "eddington_ratio": 0.05, "umax": 400.0},
+      "provenance": {
+        "basis": "NK22 Table 1 and Section 2.3/Figure 1.",
+        "mass_msun": "10^8.050 Msun from NK22 Table 1.",
+        "distance_mpc": "D_L=151 Mpc from NK22 Table 1.",
+        "redshift": "0.034 from NK22 Table 1; local source_config.yaml instead contains 0.0341.",
+        "eddington_ratio": "0.05 from NK22 Table 1, citing Edelson et al. 2019.",
+        "umax": "NK22 trims the original radial grid at u=400; this file sets 50 cells over [1,400], a different discretization.",
+        "references": ["https://arxiv.org/abs/2201.10565v2", "https://arxiv.org/abs/1811.07956"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/reference/neustadt_kochanek2022.txt", "/home/leonhard/sci001/Mrk509/raw/info.txt", "/home/leonhard/sci001/Mrk509/config/source_config.yaml"]
+      },
+      "warnings": ["Local standard-lag benchmark uses M=1.1e8 Msun and lambda_Edd=0.095 from a later study; NK22's 0.05 is deliberately retained for mapping.", "50 radial cells over [1,400] do not exactly reproduce NK22's trimmed radial discretization."]
+    },
+    "NGC5548": {
+      "params": {"mass_msun": 31988951.09691397, "distance_mpc": 75.0, "redshift": 0.017, "eddington_ratio": 0.1, "umax": 1000.0},
+      "provenance": {
+        "basis": "Preserve the existing validated local NGC5548 reproduction and NK22 Table 1.",
+        "mass_msun": "10^7.505 Msun from NK22 Table 1.",
+        "distance_mpc": "D_L=75 Mpc from NK22 Table 1.",
+        "redshift": "0.017 from NK22 Table 1 and the existing reproduction; not the 0.0163 in the local H0 source configuration.",
+        "eddington_ratio": "0.1 from NK22 Table 1, whose reference is Starkey et al. 2017.",
+        "umax": "u=1..1000 from NK22 Figure 1 and the existing local reproduction.",
+        "references": ["https://arxiv.org/abs/2201.10565v2"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/NGC5548/outputs/config.json", "/home/leonhard/sci001/test/Temperature_mapping/reference/neustadt_kochanek2022.txt", "/home/leonhard/sci001/NGC5548/raw/info.txt", "/home/leonhard/sci001/NGC5548/config/source_config.yaml"]
+      },
+      "warnings": ["The local Swift light curves are the 2019 reprocessing, not automatically identical to the input version used by NK22.", "The separate local standard-lag benchmark uses logM=7.72 and lambda_Edd=0.05; the existing NK22 mapping values are deliberately preserved."]
+    },
+    "NGC4151_a": {
+      "params": {"mass_msun": 39994474.97610978, "distance_mpc": 19.1, "redshift": 0.003, "eddington_ratio": 0.01, "umax": 400.0},
+      "provenance": {
+        "basis": "NK22 Table 1 and Section 2.3/Figure 1, applied to the local 2016 Swift campaign.",
+        "mass_msun": "10^7.602 Msun from NK22 Table 1.",
+        "distance_mpc": "D_L=19.1 Mpc from NK22 Table 1; retained rather than recomputed from its rounded low redshift.",
+        "redshift": "0.003 from NK22 Table 1; local source_config.yaml has 0.0032.",
+        "eddington_ratio": "0.01 from NK22 Table 1, citing Edelson et al. 2019.",
+        "umax": "NK22 trims the original radial grid at u=400; this file sets 50 cells over [1,400], a different discretization.",
+        "references": ["https://arxiv.org/abs/2201.10565v2", "https://arxiv.org/abs/1811.07956"],
+        "local_evidence": ["/home/leonhard/sci001/test/Temperature_mapping/reference/neustadt_kochanek2022.txt", "/home/leonhard/sci001/NGC4151_a/raw/info.txt", "/home/leonhard/sci001/NGC4151_a/config/source_config.yaml"]
+      },
+      "warnings": ["The local later standard-lag benchmark adopts M=2.30e7 Msun and lambda_Edd=0.014; those are not substituted for NK22's mapping inputs.", "50 radial cells over [1,400] do not exactly reproduce NK22's trimmed radial discretization."]
+    },
+    "NGC6814": {
+      "params": {"mass_msun": 18500000.0, "distance_mpc": 21.65, "redshift": 0.00522, "eddington_ratio": 0.0133, "umax": 1000.0},
+      "provenance": {
+        "basis": "Gonzalez et al. 2024, Section 4, fiducial inputs for the 2022 Swift campaign; consistent with the local raw/info.txt benchmark.",
+        "mass_msun": "1.85e7 Msun, H-beta reverberation value from Bentz et al. 2009 as adopted by Gonzalez et al.",
+        "distance_mpc": "D_L=21.65 Mpc adopted by Gonzalez et al. from the independent Cepheid distance of Bentz et al. 2019; no redshift-based distance substitution.",
+        "redshift": "0.00522 from Springob et al. 2005 as adopted by Gonzalez et al.; the local config rounds to 0.0052.",
+        "eddington_ratio": "Observed L_bol/L_Edd approximately 0.0133 from the campaign X-ray luminosity and bolometric correction; use this fiducial input, not the 0.0255 SED-fit or 1.3 lag-fit values.",
+        "umax": "Common mapping domain u<=1000 (R<=6000 R_g), not the truncated-disk best-fit radius or the 10000 R_g fiducial outer radius of Gonzalez et al.",
+        "references": ["https://arxiv.org/html/2308.15543", "https://doi.org/10.3847/1538-4357/ab48fb"],
+        "local_evidence": ["/home/leonhard/sci001/NGC6814/raw/info.txt", "/home/leonhard/sci001/NGC6814/config/source_config.yaml"]
+      },
+      "warnings": ["This transfers the mass, distance and fiducial luminosity normalization, not Gonzalez et al.'s relativistic irradiated-disk model: their i=45 deg, spin and color correction are not implemented.", "Published lag/SED behavior disfavors a self-consistent standard-disk explanation; map structures remain conditional on the deliberately simplified kernels."]
+    },
+    "NGC2617_a": {
+      "params": {"mass_msun": 32400000.0, "distance_mpc": 61.537848241619024, "redshift": 0.014213, "eddington_ratio": 0.018, "umax": 1000.0},
+      "provenance": {
+        "basis": "Local documented 2013-epoch benchmark derived from Fausnaugh et al. 2018; applied to the Shappee et al. 2014 outburst subset.",
+        "mass_msun": "3.24e7 Msun from Fausnaugh et al. 2018 Table 1, based on Fausnaugh et al. 2017 H-beta reverberation.",
+        "distance_mpc": "Calculated D_L in the flat LambdaCDM fallback at z=0.014213; not an independent distance or MICA H0 result.",
+        "redshift": "0.014213 from NGC2617_a/config/source_config.yaml, consistent with the rounded 0.0142 of Fausnaugh et al. 2018 Table 1.",
+        "eddington_ratio": "Project-derived 0.018 = 0.010 (2014 luminosity-based value in Fausnaugh et al. 2018 Table 1) times 1.8 (2013/2014 luminosity ratio in their Section 5.1). Assumes the same bolometric correction; this is not a directly tabulated 2013 measurement.",
+        "umax": "Adopted common mapping upper boundary 1000.",
+        "references": ["https://arxiv.org/pdf/1801.09692", "https://arxiv.org/abs/1310.2241"],
+        "local_evidence": ["/home/leonhard/sci001/NGC2617_a/raw/info.txt", "/home/leonhard/sci001/NGC2617_a/config/source_config.yaml"]
+      },
+      "warnings": ["The Eddington ratio is an approximate epoch scaling with fixed bolometric correction, not a new fit to the 2013 SED.", "A changing-look outburst need not satisfy the steady thin-disk baseline assumption.", "The luminosity distance is cosmology-assumed, with no peculiar-velocity or flow correction."]
+    }
+  }
+}

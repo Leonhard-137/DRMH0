@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.0",
+  "created_at_utc": "2026-10-22T02:48:37.068163+00:00",
+  "task": {
+    "file": "task.md",
+    "sha256": "cd2874ed3dba574dd3ad4b0e52029f46e2e447d4543ace4ef9c08710d62f34dd",
+    "object": "Deterministic covariance shrinkage of three frozen conditional importance proposals",
+    "deliverables": [
+      "Three normalized defensive Student-mixture NPZ proposals",
+      "Covariance audit arrays and finite validation report",
+      "Independent raw-NPZ review; no EM/GP/scientific evaluation"
+    ]
+  },
+  "mathematical_context": {
+    "assumptions": [
+      "The recorded component responsibility ESS and training block identities belong to the frozen 12+12 component refined source.",
+      "Student shape equals training covariance times SD inflation squared times (df-2)/df.",
+      "The conditional scientific target and priors remain unchanged; only the evaluation proposal changes."
+    ],
+    "domain": "Three layers; each proposal has two blocks of twelve positive-definite 11-dimensional Student-t components plus a logistic prior defensive component.",
+    "precision": {
+      "mode": "machine",
+      "working_digits": 16,
+      "target_tolerance": "Normalization error <=1e-12; independent log-density error <=1e-10; independent covariance reconstruction <=1e-12 absolute."
+    }
+  },
+  "implementation_discovery": {
+    "mathematica": {
+      "candidate_implementations": [],
+      "existence_evidence": "No symbolic implementation required for the existing NumPy NPZ proposal format.",
+      "local_availability": "not-applicable",
+      "availability_evidence": "No callable Wolfram evaluator is advertised in current tools; no CAS process was started."
+    },
+    "sagemath": {
+      "candidate_implementations": [],
+      "existence_evidence": "Existing validated NumPy covariance and SciPy density implementation is sufficient; no Sage implementation selected.",
+      "local_availability": "not-applicable",
+      "availability_evidence": "No alternate environment, install or scientific fit was authorized or required."
+    },
+    "python": {
+      "candidate_implementations": [
+        "NumPy block covariance shrinkage in regularize.py",
+        "SciPy multivariate_t full-mixture density comparator",
+        "Independent longdouble raw-NPZ reconstruction"
+      ],
+      "existence_evidence": "regularize.py and byte-preserved importance.py executed successfully; independent_review.json reports a separate raw-array reconstruction.",
+      "local_availability": "available",
+      "availability_evidence": "Live run completed in /home/leonhard/miniforge3/envs/mica2-slowgp/bin/python, using one BLAS thread."
+    }
+  },
+  "decision": {
+    "selected_backend": "python",
+    "backend_version": "Python 3.11.15; NumPy 2.4.3; SciPy 1.17.1",
+    "selection_reason": "Preserve the frozen NPZ layout and density implementation, using low-cost deterministic matrix arithmetic and an independent SciPy comparator.",
+    "fallback_reason": "not-required; existing numerical backend is directly appropriate and live verified."
+  },
+  "execution": {
+    "status": "complete",
+    "interface": "WSL Python CLI; OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1",
+    "command_or_input": "env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 /home/leonhard/miniforge3/envs/mica2-slowgp/bin/python -B /home/leonhard/sci001/test/mica_slowgp/staged_importance_regularized/regularize.py",
+    "code_artifact": "regularize.py"
+  },
+  "artifacts": [
+    {
+      "role": "code",
+      "path": "regularize.py",
+      "sha256": "eb2af6fffc0ec597b0b4eaabf5b0b99e63d80e3b550ab39fdcaa1273e0369118"
+    },
+    {
+      "role": "code",
+      "path": "importance.py",
+      "sha256": "0d225a24a956545a070aebead19e45b9b5eb04a79817e515e38c893c781042d4"
+    },
+    {
+      "role": "description",
+      "path": "README.md",
+      "sha256": "ea61064746665570b66d55342152b7672b799897979cc344e32d0250ce38948a"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/regularization_report.json",
+      "sha256": "60304069a879c776d2ed9a4f3493b3f1e853244267b401776689f6b8bbf65b52"
+    },
+    {
+      "role": "verification",
+      "path": "independent_review.json",
+      "sha256": "84c46b6007a3c97992f910146cf0634ad76cebd4880e2b084f615309263e3ef2"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_00.npz",
+      "sha256": "f5d7cdbef1ff5738d5cc9db3e6bf5277a7c9c3f83f8b4c9fe7c0a3708bf71193"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_00_covariance_audit.npz",
+      "sha256": "6fbc2d9ef33415fd48c3c240c7142a87374e07fc61a2c0326e3a1c6fc1fd9ee4"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_01.npz",
+      "sha256": "839f9cb9c43036cbd7f31a6d1b209b83394658378e01fbb2ab6d0852ce06f5c4"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_01_covariance_audit.npz",
+      "sha256": "ad42d8bb54c1babb043e29c5a4f3e35902eda445313ee6ea6fc0154a266c9076"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_02.npz",
+      "sha256": "b4f3a76f85ef48182a78c9605b5309ea5f73bcc41f242a75707b269e26f1be2d"
+    },
+    {
+      "role": "result",
+      "path": "artifacts/regularized/stratum_02_covariance_audit.npz",
+      "sha256": "561782fa14b16240bd261bbe6f478b05bf8bbf86123c16a2b18e93ac69146563"
+    }
+  ],
+  "result": {
+    "status": "complete",
+    "summary": "Three fixed normalized covariance-regularized proposals created in 0.188 s with zero EM or GP calls. All 72 component shapes positive definite; means/full probabilities preserved exactly. Independent review passed. This completes candidate construction only, not scientific stability or efficiency validation.",
+    "result_artifact": "artifacts/regularized/regularization_report.json"
+  },
+  "verification": {
+    "methods": [
+      "Bitwise preservation of means and full probabilities; unchanged df/epsilon and source NPZ hashes.",
+      "Positive-definite checks for all block covariances and 72 component shapes; analytic mixture normalization.",
+      "Finite 1024-draw-per-layer proposal-only smoke; save/load logpdf equality.",
+      "SciPy independent Student density comparator on nine existing training probes.",
+      "Independent longdouble raw-NPZ reconstruction of within+between covariance, ESS shrinkage and Student scale conversion."
+    ],
+    "evidence_level": "numerical-evidence",
+    "residual_or_error": "Probability normalization <=1.11e-16; SciPy absolute log-density discrepancy <=8.44e-14; independent covariance absolute discrepancy <=1.78e-15.",
+    "limitations": [
+      "No new likelihood or evidence estimate was computed.",
+      "Training density changes are in-sample and do not demonstrate lower variance.",
+      "ESS-based d+2 shrinkage is a predetermined proposal heuristic, not a scientific prior or a convergence theorem.",
+      "Only fresh independent scientific evaluation can assess importance efficiency."
+    ]
+  }
+}

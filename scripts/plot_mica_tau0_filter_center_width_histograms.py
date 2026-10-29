@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Compare MICA Gamma center/width posteriors before and after tau0 >= 0."""
 
+# 比较既有 comp0 与 comp0_tau_nonnegative 分支的 c、w 后验。
+# 先验证筛后样本恰为 tau0>=0 的条件子集及正确重归一权重；没有运行新的分支拟合。
 from __future__ import annotations
 
 import argparse
@@ -73,6 +75,7 @@ def component_frame(
     return frame.sort_values("sample").reset_index(drop=True)
 
 
+# 先核对分量 sample 一一配对，再核对筛后 ID 恰为 tau0>=0，最后核对条件化权重和 ESS。
 def validate_conditioning(
     before: pd.DataFrame,
     after: pd.DataFrame,
@@ -117,6 +120,7 @@ def validate_conditioning(
     return quality
 
 
+# 按每个 bin 累积概率；不同宽度/坐标变换的 bin 高度不能直接当单位天的密度比较。
 def probability_per_bin(
     values: np.ndarray,
     weights: np.ndarray,

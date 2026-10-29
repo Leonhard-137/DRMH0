@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plot NGC 6814 comp0 area fraction before/after tau_comp0 > 0."""
 
+# 固定 NGC6814：比较按质心定义的短分量面积占比在 tau_short>0 前后的变化。
+# 同一抽样中振幅和质心必须同步重排，避免把一个分量的时间配给另一个分量的面积。
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -14,6 +16,7 @@ THEORY = {"W2": 0.0, "M2": 0.010990, "W1": 0.024642,
           "U": 0.059693, "B": 0.100468, "V": 0.151628}
 
 
+# 面积 f_short=A_short/(A0+A1)，不是总核峰高占比；先按 tau 重排 A 后再算 f。
 def load_band_with_f(band: str):
     if band == "W2":
         zero = np.zeros(10000, dtype=float)

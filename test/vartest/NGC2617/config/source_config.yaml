@@ -1,0 +1,18 @@
+source: NGC2617
+
+driver: W2
+responses: [M2, W1, U, B, V]
+
+input_dir: fflux/host_sub
+output_root: runs/mica/gamma2
+
+ncomp: 2
+type_tf: gamma
+
+lag_limit: [-10.0, 200.0]
+type_lag_prior: 0
+flag_lag_posivity: false
+flag_trend: 0
+
+num_particles: 1
+max_num_saves: 10000

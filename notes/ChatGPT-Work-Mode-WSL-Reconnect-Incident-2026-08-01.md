@@ -381,3 +381,209 @@ reg delete HKCU\Environment /v NO_PROXY /f
 
 最终根因是在比较普通 WSL shell 与 ChatGPT app-server 的 `/proc/<pid>/environ`，并检查该 PID 的实际 socket 后才被确认。今后同类问题应直接从目标进程开始，避免再次经历相同的试错链。
 
+## 13. 2026-08-21 补充：切换到 Hiddify 后故障复发
+
+> 本节记录 2026-08-21 从 Clash 切换到 Hiddify 后的第二次事故。前面第 1 至第 12 节中的 `127.0.0.1:7890` 是 Clash 时期的历史配置；当前 Hiddify 的本地 HTTP/混合代理端口为 `127.0.0.1:12334`。
+
+### 13.1 结论摘要
+
+这次故障仍然属于代理路由问题，但与 2026-08-01 的“Windows 父进程传入空的大写代理变量”不同。
+
+切换到 Hiddify 后，Windows 用户环境和系统代理曾继续指向 Clash 的旧端口 `7890`。将 Windows 用户变量更新为 `12334` 后，Windows 侧已经正确，但 WSL shell 和 Codex app-server 仍反复得到 `7890`。即使重启 ChatGPT、终止 Ubuntu、完整执行 `wsl.exe --shutdown`、关闭 WSL `autoProxy` 并通过 `WSLENV` 显式传入 `12334`，登录 shell 仍显示旧端口。
+
+最终根因是：
+
+```text
+/home/leonhard/.zshenv
+```
+
+中硬编码了 Clash 的旧代理：
+
+```text
+http_proxy=http://127.0.0.1:7890
+https_proxy=http://127.0.0.1:7890
+```
+
+`.zshenv` 会在 zsh 启动时执行，并把 Windows/WSL 已经正确传入的 `12334` 再次覆盖为 `7890`。因此，之前所有只针对 Windows 环境、WSL 自动代理或进程重启的操作都无法真正消除旧值。
+
+将 `.zshenv` 中两处端口改为 `12334` 后，Windows、WSL 原始环境、bash、zsh、Codex CLI 和桌面 app-server 的代理值终于统一，端到端网络恢复。
+
+### 13.2 Hiddify 端口的确认
+
+Windows 监听端口检查显示，同一个进程监听了：
+
+```text
+127.0.0.1:12334
+127.0.0.1:12337
+```
+
+从 WSL 进行对照测试：
+
+- 经 `127.0.0.1:12334` 访问 `https://chatgpt.com`：成功连接代理并收到远端 HTTP `403`；
+- 经 `127.0.0.1:12337`：代理 CONNECT 超时；
+- 经旧端口 `127.0.0.1:7890`：立即 `Connection refused`；
+- WSL 直连公网：连接超时。
+
+这里的 `403` 是远端服务已经响应的证据，说明 TCP、代理转发和 TLS 路径均已建立。由此确认 `12334` 是当前可用的 Hiddify HTTP/混合代理端口，`12337` 不能作为 `HTTP_PROXY/HTTPS_PROXY` 使用。
+
+### 13.3 本次用户可见症状和日志证据
+
+`caha` 项目中的真实请求出现：
+
+```text
+POST https://chatgpt.com/backend-api/codex/responses
+Connection refused (os error 111)
+stream disconnected - retrying sampling request
+```
+
+同一时间还观察到：
+
+- 模型列表刷新失败；
+- Apps MCP 初始化失败；
+- 远程插件目录请求失败；
+- app-server remote-control WebSocket 无法刷新或连接；
+- 界面持续重新连接或请求无响应。
+
+这些上层功能共同失败，是因为它们都被路由到已经没有进程监听的 `127.0.0.1:7890`，不是模型、`caha` 项目或插件本身损坏。
+
+### 13.4 为什么前几次修复没有生效
+
+#### 13.4.1 只修改 Windows 用户变量不够
+
+Windows 用户级注册表已经变为：
+
+```text
+HTTP_PROXY=http://127.0.0.1:12334
+HTTPS_PROXY=http://127.0.0.1:12334
+```
+
+但已运行的 Windows 父进程仍可能保留旧环境。诊断时曾观察到“用户级变量是 `12334`，当前 Codex 进程和 WSL app-server 仍是 `7890`”。这说明注册表值正确不能代替目标进程环境检查。
+
+#### 13.4.2 重启 ChatGPT、终止发行版和关闭整个 WSL 都不够
+
+依次尝试过：
+
+```text
+wsl.exe --terminate Ubuntu-24.04
+wsl.exe --shutdown
+```
+
+重启后 WSL shell 仍恢复为 `7890`。这是因为旧值不是仅存在于 WSL 虚拟机缓存中，而是在每次 shell 启动时由 `.zshenv` 重新写入。
+
+#### 13.4.3 `autoProxy` 不是最终根因
+
+`.wslconfig` 原先为：
+
+```ini
+[wsl2]
+networkingMode=mirrored
+dnsTunneling=true
+autoProxy=true
+```
+
+由于 Windows 系统代理已经是 `12334`、WSL 却仍显示 `7890`，一度怀疑 `autoProxy` 缓存旧值。将其设为 `false` 并完整关闭 WSL 后，登录 shell 仍然变回 `7890`，证明 `autoProxy` 不是最终覆盖源。
+
+#### 13.4.4 显式配置 `WSLENV` 仍被 shell 覆盖
+
+Windows 用户级 `WSLENV` 被扩展为：
+
+```text
+DEEPSEEK_API_KEY/u:HTTP_PROXY/u:HTTPS_PROXY/u:NO_PROXY/u
+```
+
+使用 `wsl.exe --exec /usr/bin/env` 直接查看 WSL 原始环境时，代理已经正确为 `12334`；但进入登录 shell 后又变为 `7890`。这个“原始环境正确、登录 shell 错误”的对照最终把排查范围缩小到 shell 启动文件。
+
+随后搜索 zsh、bash、Conda 和 systemd 用户环境，发现只有 `.zshenv` 明确写有 `7890`。Conda 环境变量、Conda proxy 配置、PowerShell profile、Windows 系统级代理变量均不是本次覆盖源。
+
+### 13.5 最终实施的改动
+
+#### 13.5.1 Windows 用户代理
+
+```text
+HTTP_PROXY=http://127.0.0.1:12334
+HTTPS_PROXY=http://127.0.0.1:12334
+```
+
+原有 `NO_PROXY` 保留。
+
+#### 13.5.2 Windows 用户级 `WSLENV`
+
+```text
+DEEPSEEK_API_KEY/u:HTTP_PROXY/u:HTTPS_PROXY/u:NO_PROXY/u
+```
+
+这样由 Windows 直接启动的 WSL 进程可以显式获得大写代理变量。
+
+#### 13.5.3 WSL 全局配置
+
+文件：
+
+```text
+C:\Users\26330\.wslconfig
+```
+
+当前配置：
+
+```ini
+[wsl2]
+networkingMode=mirrored
+dnsTunneling=true
+autoProxy=false
+```
+
+关闭 `autoProxy` 不是修复 `.zshenv` 覆盖的必要条件，但当前保留该设置，使代理来源由显式环境变量控制，避免自动代理与手动变量形成两个可能漂移的来源。
+
+#### 13.5.4 zsh 启动环境
+
+文件：
+
+```text
+/home/leonhard/.zshenv
+```
+
+将以下两项从 `7890` 改为 `12334`：
+
+```text
+http_proxy=http://127.0.0.1:12334
+https_proxy=http://127.0.0.1:12334
+```
+
+大写 `HTTP_PROXY/HTTPS_PROXY` 继续由对应的小写变量派生，因此大小写值保持一致。
+
+### 13.6 验收结果
+
+修复后完成了以下验证：
+
+1. Windows 用户环境中的 `HTTP_PROXY/HTTPS_PROXY` 均为 `12334`；
+2. `wsl.exe --exec /usr/bin/env` 的原始 WSL 环境为 `12334`；
+3. bash 和 zsh 中大小写代理变量均为 `12334`；
+4. WSL 默认 `curl` 经 `12334` 收到远端 HTTP `403`，不再出现本地 `Connection refused`；
+5. 在 `caha` 工作目录运行只读、临时 Codex CLI 测试，成功返回 `CODEX_PROXY_OK`；
+6. Codex 桌面 app-server 的 `/proc/<pid>/environ` 中大小写代理变量均为 `12334`；
+7. app-server 出现到 `127.0.0.1:12334` 的真实 `ESTAB` socket；
+8. `GET /backend-api/codex/models` 返回 `200 OK`；
+9. `POST /backend-api/ps/apps/batch` 返回 `200 OK`；
+10. app-server remote-control WebSocket 状态变为 `Connected`；
+11. Apps MCP 成功初始化。
+
+启动期间仍出现个别插件 manifest 警告和一次远程插件目录刷新失败，但在模型接口、Apps 接口、WebSocket、真实 socket 和 Codex CLI 请求均成功的情况下，它们不属于本次主故障。
+
+桌面端真实对话的最终界面验收，仍应在 `caha` 中发送一条消息，并确认日志出现模型响应和 `turn/completed`。网络层和 app-server 层已经完成闭环。
+
+### 13.7 以后切换代理软件时的最短操作路径
+
+1. 先确认新代理软件实际监听的 HTTP/混合端口，不使用软件名称推测端口；
+2. 显式测试该端口，并区分“远端返回 401/403”和“本地 Connection refused/timeout”；
+3. 搜索所有启动文件中的旧端口，至少包括 `.zshenv`、`.zshrc`、`.profile`、`.bashrc`、Conda activate 脚本和 systemd 用户环境；
+4. 同步更新 Windows 用户环境、`WSLENV` 和仍保留的 shell 代理配置；
+5. 完整关闭并重启 WSL/ChatGPT 后，分别检查原始 WSL 环境、登录 shell 环境和 app-server 环境；
+6. 用 `ss -tpn` 确认 app-server 的真实连接目标；
+7. 以一次真实 Codex 请求和 `turn/completed` 作为最终验收。
+
+本次最重要的新教训是：**当 WSL 原始环境正确、登录 shell 环境错误时，应立即检查 shell 启动文件，不应继续反复修改 Windows 代理或重启 WSL。**
+
+### 13.8 密钥安全补充
+
+排查过程中发现 `.zshenv` 和 `.bashrc` 中存在明文 API 密钥。诊断命令一度读取并显示了这些行。报告不记录任何密钥值，但相关密钥应视为已经暴露并尽快撤销、轮换。
+
+后续排查代理配置时，应只输出代理相关行，避免直接打印包含密钥的整个 shell 启动文件。长期建议将密钥迁移到权限受控的专用凭据文件或密钥管理机制中，而不是与普通 shell 配置混放。

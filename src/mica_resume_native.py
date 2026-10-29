@@ -44,6 +44,8 @@ class _DNestOptionsPrefix(ct.Structure):
     ]
 
 
+# 通过 ctypes 打开已经导入的 pymica 扩展，访问原生函数和全局状态。
+# 探测 DNestOptions 的关键字段布局；如果第三方 C 结构改变，必须先审查 ABI 再恢复。
 def _load_native():
     extension = importlib.import_module("pymica.pymica")
     library = ct.CDLL(extension.__file__)
@@ -79,12 +81,14 @@ def _load_native():
     return library, options, str(Path(extension.__file__).resolve())
 
 
+# 各 rank 汇集错误后一起抛出，避免一部分进程退出而另一部分继续等待 MPI 同步。
 def _collective_check(comm, error):
     errors = comm.allgather(error)
     if any(errors):
         raise RuntimeError("; ".join(f"rank {rank}: {item}" for rank, item in enumerate(errors) if item))
 
 
+# rank 0 检查后验头部样本数、列数、有限值及哈希，再广播元数据。
 def _posterior_metadata(comm, dimensions):
     """Validate the immutable input to C's fscanf loop, without computing stats."""
     result, error = None, None
@@ -111,6 +115,8 @@ def _posterior_metadata(comm, dimensions):
     return comm.bcast(result, root=0)
 
 
+# 从原生 C 内存读取连续光变参数的均值/标准差，并用字节哈希比对各 rank。
+# 不在 Python 中另算一套统计量，确保保存的就是原生响应拟合真正使用的先验。
 def _prior_state(comm, library, dimensions, metadata):
     error, result = None, None
     try:
@@ -132,6 +138,8 @@ def _prior_state(comm, library, dimensions, metadata):
     return result
 
 
+# 首次原子提交 continuum_prior.json；恢复时验证固定先验没有改变。
+# 旧运行缺少记录时允许登记当前原生先验，但不声称补回过去未保存的随机状态。
 def _persist_or_verify_prior(comm, prior, phase):
     """Commit the exact C prior before RM, or verify an existing commitment."""
     error, result = None, None
@@ -180,6 +188,10 @@ def _persist_or_verify_prior(comm, prior, phase):
     return comm.bcast(result, root=0)
 
 
+# 原生阶段控制：fresh/continuum 进入连续光变采样；response_start/response 重用固定后验。
+# 复用时调用原生 postprocess_con 重建先验内存，再按阶段设置响应 restart 标志。
+# 混合核调用 mc_mmap，普通核调用 mc_line；fit_only 控制后续重建开关。
+# 这些 ctypes 调用会执行实际采样，不应作为导入检查或文档验证运行。
 def run_native_resume(*, mixed: bool, phase: str, fit_only: bool = False) -> dict:
     """Run fresh, response, response_start, or continuum after model.setup().
 
@@ -223,6 +235,7 @@ def run_native_resume(*, mixed: bool, phase: str, fit_only: bool = False) -> dic
             try:
                 options.posterior_sample_file = b"data/posterior_sample.txt"
                 # Same C arithmetic and MPI broadcast as the original mc_con.
+                # 用原生 C 的计算顺序恢复原先先验均值/方差，避免另一种 Python 算法带来浮点差异。
                 library.postprocess_con()
             finally:
                 options.posterior_sample_file = previous_path
@@ -232,6 +245,7 @@ def run_native_resume(*, mixed: bool, phase: str, fit_only: bool = False) -> dic
         prior_manifest = _persist_or_verify_prior(comm, prior, phase)
         # CDNest still writes posterior samples/evidence; skip RM reconstruction
         # and decomposition when the user requested only a fit.
+        # response 才恢复响应采样；response_start 从固定驱动先验重新开始响应链。
         library.set_argv(0, 0, 1 if phase == "response" else 0, 0, int(fit_only))
         logz = ct.POINTER(ct.c_double).in_dll(library, "logz_arr")
         _collective_check(comm, None if logz else "Native response evidence buffer is missing")

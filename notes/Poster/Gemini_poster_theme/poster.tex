@@ -1,0 +1,191 @@
+% English A1 landscape poster: principle -> method -> H0 -> prospects.
+% Scientific figures are included directly from the manuscript, unchanged.
+\documentclass[final]{beamer}
+\usepackage{lmodern}
+\usepackage[size=custom,width=84.1,height=59.4,scale=1.0]{beamerposter}
+\usetheme{gemini}
+\usecolortheme{gemini}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{tcolorbox}
+\DeclareFontShape{OMX}{cmex}{m}{n}{<-> cmex10}{}
+
+% Arial with genuine bold/italic faces; sizes refer to the full A1 page.
+% Typography guidance: https://blogs.ncl.ac.uk/icmpgr/making-a-poster/
+% https://uwm.edu/undergraduate-research/resources/poster-creation-resources/designing-an-effective-research-conference-poster/
+\setsansfont{arial.ttf}[
+  Path=/mnt/c/Windows/Fonts/,
+  BoldFont=arialbd.ttf,
+  ItalicFont=ariali.ttf,
+  BoldItalicFont=arialbi.ttf]
+\setmainfont{arial.ttf}[
+  Path=/mnt/c/Windows/Fonts/,
+  BoldFont=arialbd.ttf,
+  ItalicFont=ariali.ttf,
+  BoldItalicFont=arialbi.ttf]
+
+\definecolor{ink}{HTML}{22313F}
+\definecolor{muted}{HTML}{52606D}
+\setbeamercolor{normal text}{fg=ink,bg=white}
+\newlength{\sepwidth}
+\setlength{\sepwidth}{0.022\paperwidth}
+\setbeamersize{text margin left=\sepwidth,text margin right=\sepwidth}
+\newcommand{\bodytype}{\sffamily\fontsize{26}{33}\selectfont}
+\newcommand{\captiontype}{\sffamily\fontsize{20}{26}\selectfont}
+% Matching title bars and rounded, solid borders for all five sections.
+\newtcolorbox{posterpanel}[2]{%
+  width=\linewidth,
+  colframe=blue,colback=white,colbacktitle=blue,coltitle=white,
+  boxrule=1.3pt,arc=0.3cm,boxsep=0pt,
+  left=0.45cm,right=0.45cm,top=0.28cm,bottom=0.32cm,
+  toptitle=0.27cm,bottomtitle=0.27cm,
+  before skip=0pt,after skip=0pt,
+  fonttitle=\sffamily\fontsize{36}{43}\selectfont\bfseries,
+  fontupper=\bodytype,before upper=\raggedright,
+  title={\vphantom{Ag}#1\enspace #2}}
+\newcommand{\subhead}[1]{%
+  \vspace{0.38cm}{\fontsize{28}{35}\selectfont\bfseries #1\par}\vspace{0.14cm}}
+
+\title{The Potential of AGN as Cosmological Distance Probes}
+% Author spellings follow the manuscript; UCAS school name follows its website.
+\author{\texorpdfstring{Zhi-Kun Xiao\textsuperscript{1,2}\enspace\textperiodcentered\enspace
+        Yan-Rong Li\textsuperscript{1}}{Zhi-Kun Xiao; Yan-Rong Li}}
+\institute{\textsuperscript{1}Institute of High Energy Physics, Chinese Academy of Sciences\par
+           \textsuperscript{2}School of Physical Sciences, University of Chinese Academy of Sciences}
+
+\setbeamertemplate{headline}{%
+  % Narrow institutional color bar: IHEP, then the supplied laboratory logo.
+  \begin{beamercolorbox}[wd=\paperwidth]{headline}
+    \vskip0.38cm
+    \hbox to\paperwidth{\hspace{\sepwidth}%
+      \includegraphics[height=2.35cm]{assets/ihep-logo-bilingual.png}%
+      \hspace{0.9cm}%
+      \includegraphics[height=2.35cm]{assets/particle-astrophysics-logo.png}%
+      \hfill\hspace{\sepwidth}}
+    \vskip0.38cm
+  \end{beamercolorbox}
+  % Title block sits below the color bar on white and is centered.
+  \begin{beamercolorbox}[wd=\paperwidth]{normal text}
+    \centering
+    \vskip0.55cm
+    \begin{minipage}{0.956\paperwidth}
+      \centering
+      {\sffamily\fontsize{70}{78}\selectfont\bfseries\inserttitle\par}
+      \vspace{0.22cm}
+      {\sffamily\fontsize{32}{39}\selectfont\color{muted}
+        Distances and the Hubble Constant from Continuum Reverberation Mapping\par}
+      \vspace{0.32cm}
+      {\sffamily\fontsize{30}{36}\selectfont\insertauthor\par}
+      \vspace{0.18cm}
+      {\sffamily\fontsize{24}{29}\selectfont\insertinstitute\par}
+    \end{minipage}\par
+    \vskip0.55cm
+  \end{beamercolorbox}
+  {\color{darkblue}\hrule height 4pt}}
+
+\setbeamertemplate{footline}{%
+  \begin{beamercolorbox}[wd=\paperwidth]{headline}
+    \vskip0.34cm
+    \hbox to\paperwidth{\hspace{\sepwidth}%
+    {\sffamily\fontsize{22}{28}\selectfont
+     \href{mailto:xiaozk@ihep.ac.cn}{xiaozk@ihep.ac.cn}\hfill
+     20th Graduate Student Symposium on Particle Astrophysics\quad
+     17 September 2026, Beijing}%
+    \hspace{\sepwidth}}
+    \vskip0.34cm
+  \end{beamercolorbox}}
+
+\begin{document}
+\begin{frame}[t]
+\bodytype
+\vspace{0.25cm}
+\begin{columns}[T,onlytextwidth]
+
+% Left column: principle and method, with the original validation figure.
+\begin{column}{0.346\paperwidth}
+\bodytype\raggedright
+\begin{posterpanel}{01}{AGN Distance Measurements}
+
+{\fontsize{30}{37}\selectfont\bfseries Time lags set the disk scale;\par fluxes set the distance.\par}
+\vspace{0.24cm}
+Interband continuum lags measure the accretion-disk scale in active galactic nuclei (AGNs). Combining this scale with observed fluxes and a disk model yields a luminosity distance; the distance--redshift relation then constrains $H_0$.
+\vspace{0.25cm}
+\[
+  \tau_{\rm abs},\ f_\nu
+  \ \longrightarrow\ D_{\rm L}
+  \ \longrightarrow\ H_0
+\]
+{\captiontype $\tau_{\rm abs}$: absolute lag; $f_\nu$: flux density.\par}
+\end{posterpanel}
+\vspace{0.55cm}
+\begin{posterpanel}{02}{From Light Curves to Distances}
+
+{\fontsize{30}{37}\selectfont\bfseries 10 AGNs\enspace\textperiodcentered\enspace 6 monitoring bands\par}
+\vspace{0.2cm}
+{\captiontype \textit{Swift}/UVOT: UVW2, UVM2, UVW1, U, B, V.\par}
+
+\subhead{Response extraction and validation}
+MICA's double-Gamma model empirically separates continuum responses. We test the short-lag component against disk predictions using its difference spectrum (variable SED), lag spectrum, and U-band excess.
+
+\subhead{Distance and $H_0$ inference}
+Under the standard-disk assumption, lags and fluxes constrain each AGN's distance. A joint analysis of all ten sources then constrains $H_0$.
+
+\vspace{0.4cm}
+{\centering
+\includegraphics[width=0.90\linewidth]{../../../DRMH0/fig/paper/sed_lag/Fig3_Mrk817_a_sed_lag.pdf}\par}
+\par\vspace{0.12cm}
+{\captiontype
+\textbf{Mrk 817: difference-spectrum and lag-spectrum tests.}
+Left: difference spectrum. Right: short-lag component's lag spectrum.
+Dashed curves show the standard-disk spectral shape and the $\beta=4/3$ lag fit, respectively; $\chi^2/\mathrm{dof}=2.26/4$ for the lag fit.\par}
+\end{posterpanel}
+
+\end{column}
+
+% Right column: original Hubble figure, conditional inference, and prospects.
+\begin{column}{0.601\paperwidth}
+\bodytype\raggedright
+\begin{posterpanel}{03}{The Distance--Redshift Relation and the Hubble Constant}
+
+\begin{minipage}[c]{0.43\linewidth}
+  {\fontsize{28}{35}\selectfont\bfseries Joint inference from 10 AGNs\par}
+  {\fontsize{24}{30}\selectfont Conditional on a shared standard-disk SED\par}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.54\linewidth}
+  \centering
+  {\fontsize{54}{66}\selectfont $H_0=89.6^{+8.3}_{-7.0}$\par}
+  {\fontsize{26}{33}\selectfont $\mathrm{km\,s^{-1}\,Mpc^{-1}}$\par}
+\end{minipage}
+\vspace{0.45cm}
+
+{\centering
+\includegraphics[width=0.93\linewidth]{../../../DRMH0/fig/paper/hubble/joint_hubble_shared_sed_no_f0.pdf}\par}
+\par\vspace{0.15cm}
+{\captiontype
+\textbf{Joint distance fit for ten AGNs.} Inclination fixed at $45^\circ$; $\chi^2/\mathrm{dof}=49.60/9$.
+Left: distance modulus versus redshift and residuals. Right: joint $H_0$ posterior.
+SH0ES and Planck are shown for comparison only.\par}
+\end{posterpanel}
+
+\vspace{0.55cm}
+\begin{posterpanel}{04}{Cosmological Prospects}
+
+{\bodytype
+\textbf{Larger samples and higher redshifts:} Extend AGN monitoring to reduce $H_0$ uncertainties and constrain the matter density $\Omega_{\rm m}$ and other cosmological parameters.\par}
+\vspace{0.2cm}
+{\bodytype
+\textbf{Combining cosmological probes:} Combine with BAO to constrain the comoving sound horizon $r_{\rm d}$, and with SARM geometric quasar distances to test the Etherington distance-duality relation.\par}
+\end{posterpanel}
+
+\vspace{0.55cm}
+\begin{posterpanel}{05}{References}
+{\captiontype\color{muted}\raggedright
+\setlength{\parskip}{0pt}
+[1] Li, Wang \& Bai (2016), ApJ, 831, 206.\par
+[2] Cackett, Horne \& Winkler (2007), MNRAS, 380, 669.\par
+[3] \href{https://doi.org/10.3847/1538-4357/addf40}{Li, Shangguan, Wang et al. (2025), ApJ, 988, 42}.\par}
+\end{posterpanel}
+\end{column}
+\end{columns}
+\end{frame}
+\end{document}

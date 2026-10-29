@@ -40,6 +40,7 @@ def arr(path: Path) -> np.ndarray:
     return x.reshape(1, -1) if x.ndim == 1 else x
 
 
+# 原始 DNest 样本并非等权后验；先校验权重为有限非负值，再归一化到总质量 1。
 def normalized_weights(weights) -> np.ndarray:
     weights = np.asarray(weights, float)
     if weights.ndim != 1:
@@ -52,6 +53,8 @@ def normalized_weights(weights) -> np.ndarray:
     return weights / total
 
 
+# 按数值稳定排序，用累计正权重构造经验 CDF，再线性插值得分位数。
+# 本实现会忽略非有限数值和非正权重；若有效样本全空则报错，不把空集写成一个延迟。
 def weighted_quantile(values, weights, quantiles=Q68) -> np.ndarray:
     values = np.asarray(values, float)
     weights = np.asarray(weights, float)
@@ -67,6 +70,7 @@ def weighted_quantile(values, weights, quantiles=Q68) -> np.ndarray:
     return np.interp(np.asarray(quantiles, float), cdf, values)
 
 
+# 输出 median、median-p15.865、p84.135-median，是等尾区间，不是拟合高斯后的标准差。
 def q68(values, weights):
     p16, p50, p84 = weighted_quantile(values, weights)
     return float(p50), float(p50 - p16), float(p84 - p50)
@@ -98,6 +102,7 @@ def component_order(name: str) -> int:
     return int(m.group(1)) if m else 98
 
 
+# 把单核族扩展到各分量，或把 mix220 一类标签逐位解码成 Gamma/Gamma/Gaussian。
 def model_kinds(model: str, ncomp: int) -> list[str]:
     model = model.lower()
     if model.startswith("mix"):
@@ -108,6 +113,8 @@ def model_kinds(model: str, ncomp: int) -> list[str]:
     return [model_label(model)] * ncomp
 
 
+# tau 表示核的一阶矩质心；Gaussian/tophat 的 center 就是质心，
+# Gamma(shape=2) 的 tau=center+2w，指数核的 tau=center+w；这里的 w 是尺度参数。
 def tau_from_kind(center, width, kind: str):
     if kind in {"gaussian", "tophat"}:
         return center
@@ -118,6 +125,7 @@ def tau_from_kind(center, width, kind: str):
     return center
 
 
+# 质心回到解析核的平移参数；Gamma/指数的 center 是起点，不能与延迟质心互换使用。
 def center_from_kind(centroid, width, kind: str):
     """Convert a transfer-function centroid back to its onset/shift parameter."""
     if kind in {"gaussian", "tophat"}:
@@ -129,6 +137,8 @@ def center_from_kind(centroid, width, kind: str):
     return centroid
 
 
+# 用原生列名区分历史 component_center 和当前 component_centroid，拒绝缺失/重复语义。
+# 同一个数值若来自不同列名，物理解释不同，不能只凭列位置猜测。
 def component_location_name(names: list[str], index: int) -> str:
     """Return the native lag-column name used by this MICA output.
 
@@ -149,6 +159,9 @@ def component_location_name(names: list[str], index: int) -> str:
     return found[0]
 
 
+# 输入是每行一个完整联合参数样本；输出四个 (ncomp, nsamples) 矩阵。
+# 原生 amplitude 与 sigma 存的是 ln(A)、ln(w)，须先 exp 才得到面积与物理宽度。
+# 此读取路径按正响应参数化解释 amplitude；不应直接用于 signed-response 的原生输出。
 def component_parameter_arrays(
     sample: np.ndarray,
     names: list[str],
@@ -183,6 +196,9 @@ def component_parameter_arrays(
     ))
 
 
+# 只有显式 component_order=moment1 才逐样本按质心重标号，且限于两个同核族分量。
+# 幅度、位置、宽度三列必须成组交换，保留同一样本内相关性；不删样本、不改变权重。
+# 编号顺序是统计标签约定，不是盘/BLR 物理分类。
 def reorder_component_columns(
     sample: np.ndarray,
     names: list[str],
@@ -236,6 +252,7 @@ def reorder_component_columns(
     return ordered, swapped
 
 
+# 按原生整数列索引建立名称表；后续按名称找列，避免硬编码历史 center/新 centroid 的差异。
 def param_names(path: Path) -> list[str]:
     names: list[str] = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -255,6 +272,7 @@ def col(names: list[str], name: str) -> int:
     return names.index(name)
 
 
+# 将 r1/r2 简写映射为 mica_round1/mica_round2，再读命名 stage 的配置。
 def stage_config(cfg: dict, stage: str) -> dict:
     # r1 -> mica_round1; r2 -> mica_round2
     m = re.fullmatch(r"r(\d+)", stage)
@@ -358,6 +376,8 @@ def configured_run_name(fit: dict, response: str) -> str:
     return name
 
 
+# 只收集当前 driver、模型、分量数与响应列表对应的运行目录。
+# 根目录若混入其他模型会拒绝，防止静默把旧模型结果与新配置拼表。
 def run_dirs(source_dir: Path, fit: dict) -> list[Path]:
     root = mica_run_root(source_dir, fit)
     if not root.is_dir():
@@ -407,6 +427,8 @@ def add_q(row: dict, prefix: str, values, weights) -> None:
     row[f"{prefix}_err_high"] = hi
 
 
+# 复现 MICA 的每条曲线归一化尺度：通常用均值；任一曲线均值过小时双方用半振幅。
+# 面积 A 在归一化光变单位下；gain=A×(response_scale/driver_scale) 才回到两曲线原单位比。
 def mica_flux_scales(run_dir: Path) -> tuple[float, float, str]:
     """Reproduce MICA2's per-run flux normalization for physical TF areas."""
     curves = []
@@ -433,12 +455,17 @@ def mica_flux_scales(run_dir: Path) -> tuple[float, float, str]:
     return float(scales[0]), float(scales[1]), mode
 
 
+# short/delayed 是按分量编号生成的展示标签；native 标签未必已经按质心有序。
+# 即使按质心排序，short 也不自动等于真实吸积盘响应。
 def role(k: int, ncomp: int) -> str:
     if ncomp == 2:
         return "short" if k == 0 else "delayed"
     return "short" if k == 0 else f"comp{k}"
 
 
+# 核心汇总：sample1d 原始行 + weights 最后一列 → 标签转换 → 可选条件筛选 → 加权统计。
+# 这里读的不是已等权重采样的 posterior_sample1d；两种文件不可混用权重。
+# 输出分量统计、先验、tf0 后验、全部分量后验，以及保留质量/权重 ESS 等选择元数据。
 def summarize_run(
     run_dir: Path,
     cfg: dict,
@@ -474,6 +501,7 @@ def summarize_run(
 
     sample_ids = np.arange(len(sample))
     q_max = None if force_all or branch_definition is not None else fit.get("posterior_q_max")
+    # 保留质量使用筛选前的全后验权重；筛选后 weights 是条件分布，二者含义不同。
     retained_weight = 1.0
     selection = "all"
     keep = np.ones(len(sample), dtype=bool)
@@ -499,6 +527,7 @@ def summarize_run(
         if model != "gaussian":
             raise ValueError("posterior_q_max is only defined for Gaussian runs")
         q_max = float(q_max)
+        # 旧 Gaussian q0 筛选是 center/width 的形状条件，不是独立的盘成分证据。
         q = centers_matrix[0] / widths_matrix[0]
         keep = np.isfinite(q) & (q < q_max)
         retained_weight = float(np.sum(weights[keep]))
@@ -543,6 +572,7 @@ def summarize_run(
     taus = [centroids_matrix[k] for k in range(ncomp)]
 
     amp_sum = np.sum(np.vstack(amps), axis=0)
+    # 把原生归一化面积换回 response/driver 的物理单位比；并未做红移或盘模型换算。
     gains = [amp * scale_ratio for amp in amps]
     gain_sum = amp_sum * scale_ratio
     rows = []
@@ -562,6 +592,7 @@ def summarize_run(
         add_q(row, "amp_frac", amps[k] / amp_sum, weights)
         rows.append(row)
 
+    # 混合核总质心须逐样本先求 sum(A_i*tau_i)/sum(A_i)，再统计分位数；不能混合各列中位数。
     total_tau = np.sum(np.vstack(amps) * np.vstack(taus), axis=0) / amp_sum
     row = {
         **metadata,
@@ -646,6 +677,8 @@ def summarize_run(
     return rows, priors, posterior, component_posterior, selection_row
 
 
+# 优先读实际先验表，缺失时从原生参数名文件恢复边界；并将 ln(A)、ln(w) 边界 exp。
+# center 与 tau 分开记录，避免把旧 Gamma 起点先验误标成质心先验。
 def read_applied_priors(
     path: Path,
     band: str,
@@ -760,6 +793,8 @@ def component_posterior_frame(rows: list[dict]) -> pd.DataFrame:
     ).drop(columns="_order")
 
 
+# 结果契约：mica_component_summary.csv 给每波段/分量统计，
+# mica_tf0_posterior.txt 给下游短分量样本；mica_component_posterior.txt 保留全分量逐样本关联。
 def save_collection(
     out_dir: Path,
     comp_rows: list[dict],
@@ -786,6 +821,7 @@ def save_collection(
     return comp, posterior, component_posterior
 
 
+# 低分支质量与低权重 ESS 只生成诊断标记，不会自动拒绝或提高分支可信度。
 def selection_status(parent_mass: float, ess: float, config: dict) -> str:
     flags = []
     if parent_mass < float(config["low_mass_warning"]):
@@ -795,6 +831,8 @@ def selection_status(parent_mass: float, ess: float, config: dict) -> str:
     return "+".join(flags) if flags else "ok"
 
 
+# 按指定参数区域构造条件后验，并把分支产物放进独立子目录。
+# 分支内权重重新归一化；parent_posterior_mass 仍记录它在完整后验中的原始质量。
 def collect_branch(
     out_dir: Path,
     runs: list[Path],
@@ -861,6 +899,8 @@ def collect_branch(
     return branch_summary, branch_posterior
 
 
+# 入口默认同时保存当前选择与 *_all 完整后验；启用分支时再逐分支汇总。
+# 额外统计未分配质量和重叠质量，提醒配置的多个区域未必组成互斥且完备的划分。
 def main() -> None:
     ap = argparse.ArgumentParser(description="Collect compact MICA component and prior tables.")
     ap.add_argument("source_dir", type=Path)
@@ -992,6 +1032,7 @@ def main() -> None:
             all_band = all_band.sort_values("sample")
             sample_ids = all_band["sample"].to_numpy(int)
             weights = all_band["weight"].to_numpy(float)
+            # 逐原始 sample ID 追踪分支归属次数：0=遗漏，1=唯一归属，>1=分支重叠。
             membership = np.zeros(len(all_band), dtype=int)
             for branch_id, posterior in branch_tf0.items():
                 selected_ids = set(

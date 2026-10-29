@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Inspect the U-band two-Gamma posterior in the native center--width plane."""
 
+# 读取历史 past/runs/past 路径的 U 后验，在原生 c0-w0 平面比较选择区域。
+# 选择条件是 tau0<tau1 且 tau0>0.1天；默认旧路径是否仍存在需由使用者核对。
 from __future__ import annotations
 
 import argparse
@@ -19,6 +21,7 @@ DEFAULT_OUTPUT = Path(
 )
 
 
+# 原生 tau0=c0+2exp(logw0)，f0=exp(logA0)/(exp(logA0)+exp(logA1))；selected 仅标识条件子集。
 def load_posterior(path: Path) -> dict[str, np.ndarray]:
     sample = np.loadtxt(path, comments="#")
     if sample.ndim != 2 or sample.shape[1] < 10:

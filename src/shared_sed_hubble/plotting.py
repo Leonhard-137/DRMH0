@@ -1,3 +1,5 @@
+# 只读已完成 shared-SED 的 CSV/后验画图，不导入源拟合或运行采样。
+# 距离必须为 Mpc 的 D_L；μ=5log10(D_L/Mpc)+25。SciPy KDE 仅用于画旧 H0 样本密度。
 """Reusable plotting for existing shared-SED source distances and H0 samples.
 
 The module only consumes result CSV files; it does not run inference or import
@@ -29,6 +31,7 @@ from .style import (
 )
 
 
+# 显示曲线采用相同平直 ΛCDM 的 H0 D_L；除 H0 得到 Mpc。
 def dl_scale(z: float, om0: float) -> float:
     """Return H0 times luminosity distance in flat LCDM, in km/s."""
     return 299792.458 * (1 + z) * quad(
@@ -37,6 +40,7 @@ def dl_scale(z: float, om0: float) -> float:
     )[0]
 
 
+# 同步保存 PNG/PDF，关闭图对象释放内存。
 def save(fig, output_dir: Path, stem: str) -> tuple[Path, Path]:
     paths = tuple(output_dir / f"{stem}.{extension}" for extension in ("png", "pdf"))
     for path in paths:
@@ -45,6 +49,7 @@ def save(fig, output_dir: Path, stem: str) -> tuple[Path, Path]:
     return paths
 
 
+# 距离分位数逐个单调变换到 μ；灰带仅含 H0 参数区间，参考 H0 带不参与拟合。
 def plot_hubble(distances, summary, h_samples, output_dir: Path, om0: float):
     d = distances.sort_values("z").reset_index(drop=True).copy()
     for suffix in ("q16", "q50", "q84"):
@@ -141,6 +146,7 @@ def plot_hubble(distances, summary, h_samples, output_dir: Path, om0: float):
     return save(fig, output_dir, "joint_hubble_modulus")
 
 
+# 画归一化 λRλ，自由 FFA 点与强制 −7/3 的共享 Fλ SED 比较；乘 λ 后斜率变为 −4/3。
 def plot_seds(bands, sources: list[str], output_dir: Path):
     ncols = min(SED_MAX_COLUMNS, len(sources))
     nrows = math.ceil(len(sources) / ncols)
@@ -204,6 +210,7 @@ def plot_seds(bands, sources: list[str], output_dir: Path):
     return save(fig, output_dir, "shared_sed_comparison")
 
 
+# 要求距离摘要和 SED 表包含完全相同的源集，防止子样本图搭配全样本 H0。
 def make_plots(
     output_dir: Path,
     sources: list[str] | None = None,
@@ -240,6 +247,7 @@ def make_plots(
     return {"joint_hubble_modulus": hubble, "shared_sed_comparison": sed}
 
 
+# 独立重绘入口，读取已完成结果并输出两组 PNG/PDF。
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Redraw existing shared-SED distance and H0 figures")
     parser.add_argument("--output", type=Path, required=True, help="Directory containing the four result CSV files")

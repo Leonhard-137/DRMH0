@@ -41,6 +41,7 @@ import yaml
 # response band.  Importing pymica/mpi4py in that scheduler initializes MPI in
 # singleton mode, and MPICH 5 then rejects the child mpiexec jobs as a nested,
 # incompatible PMI runtime.  Only processes created by mpiexec need MPI.
+# 外层仅调度，不导入会初始化 MPI 的 pymica/mpi4py；实际 worker 由 PMI/PMIX 环境标识。
 _MPI_WORKER = "PMI_RANK" in os.environ or "PMIX_RANK" in os.environ
 if _MPI_WORKER:
     import pymica
@@ -129,12 +130,15 @@ def rel(base: Path, value: str | Path) -> Path:
     return path if path.is_absolute() else base / path
 
 
+# 优先使用当前 Python 环境旁的 mpiexec，减少 MPI 实现与 mpi4py 链接不匹配。
 def compatible_mpiexec() -> Path | str:
     """Use the MPI launcher installed beside the active Python interpreter."""
     candidate = Path(sys.executable).with_name("mpiexec")
     return candidate if candidate.exists() else "mpiexec"
 
 
+# 配置中的 mica_stages 决定运行顺序；未给出时兼容旧的 mica_round1。
+# 这里检查 stage 是否存在且不重复，避免同一次调度误跑同一输出目录。
 def configured_stages(cfg: dict) -> list[str]:
     """Return the enabled MICA config sections in execution order."""
     raw = cfg.get("mica_stages")
@@ -159,6 +163,9 @@ def _fixed_component_count(value, key: str) -> int:
     return int(value)
 
 
+# 配置归一化入口：先合并默认值和指定 stage，再解析驱动/响应波段、核族、固定分量数及先验。
+# 混合核代码的每一位对应一个原生分量；这里形成的内部字段供 setup 与目录命名共用。
+# lag_limit/lag_prior 影响推断；plot_tf_lag_range/plot_tf_num_points 只影响已有结果的显示网格。
 def fit_config(cfg: dict, stage: str = "mica_round1") -> dict:
     raw = dict(cfg.get(stage, {}) or {})
     if not raw:
@@ -169,6 +176,7 @@ def fit_config(cfg: dict, stage: str = "mica_round1") -> dict:
     fit.setdefault("responses", cfg.get("response_bands", []))
 
     type_tf = str(fit["type_tf"]).strip().lower()
+    # 数字串不是连续的数值参数：例如 220 表示三分量的核类型代码。
     is_mixed = bool(type_tf) and type_tf.isdigit()
     if is_mixed:
         if any(code not in MIX_CODES for code in type_tf):
@@ -202,6 +210,7 @@ def fit_config(cfg: dict, stage: str = "mica_round1") -> dict:
 
     if ncomp < 1:
         raise ValueError(f"{stage} component count must be >= 1, got {ncomp}")
+    # 不同核族不能交换同一套参数语义，因此混合模型保留原生标签。
     if is_mixed and str(fit.get("component_order", "native")).lower() not in {
         "", "native", "none"
     }:
@@ -223,6 +232,7 @@ def fit_config(cfg: dict, stage: str = "mica_round1") -> dict:
     ):
         raise ValueError(f"{stage}.plot_tf_num_points must be an integer >= 2")
 
+    # 逐波段目标覆盖全局累计目标，不是把同一批迭代数复制到所有响应。
     band_targets = fit.get("max_num_saves_by_band", {}) or {}
     if not isinstance(band_targets, dict):
         raise ValueError(f"{stage}.max_num_saves_by_band must be a mapping")
@@ -242,6 +252,8 @@ def fit_config(cfg: dict, stage: str = "mica_round1") -> dict:
     return fit
 
 
+# 运行目录名是后处理定位输入的契约，包含 driver、band、ncomp 与核族。
+# 本函数允许自定义模板并保证是单层目录名；部分下游 reader 仍按 run_*_to_*_*comp_* 解析。
 def run_name(fit: dict, response: str) -> str:
     ncomp = fit["ncomp"]
     tf_label = fit["_tf_label"]
@@ -275,6 +287,7 @@ def run_name(fit: dict, response: str) -> str:
     return name
 
 
+# 普通 gmodel 在 output_root 下按分量数分目录；混合 mmap 的 output_root 已单独隔离模型。
 def mica_run_root(src: Path, fit: dict) -> Path:
     root = src / fit["output_root"]
     return root if fit["_mixed"] else root / f"{fit['ncomp']}comp"
@@ -284,6 +297,8 @@ def run_dir(src: Path, fit: dict, response: str) -> Path:
     return mica_run_root(src, fit) / run_name(fit, response)
 
 
+# 冻结本次使用的光变曲线：prepared_dir 中的源文件复制为 input/cont.txt 与 input/line.txt。
+# 每行沿用 time、flux、error 三列；后续恢复比较的是这些输入副本及其哈希。
 def copy_inputs(src: Path, source: str, fit: dict, response: str, rd: Path) -> None:
     pdir = rel(src, fit["prepared_dir"])
     inp = rd / "input"
@@ -292,6 +307,8 @@ def copy_inputs(src: Path, source: str, fit: dict, response: str, rd: Path) -> N
     shutil.copy2(pdir / f"{source}_{response}.txt", inp / "line.txt")
 
 
+# 一个 set1 表示同一驱动对应的一组响应；pairwise 情况只有 driver 与一个 response。
+# 只由 rank 0 读磁盘，再广播数组，保证各 MPI rank 用同一输入。
 def load_data() -> dict:
     if COMM is None:
         raise RuntimeError("load_data() must run inside an MPI worker")
@@ -301,6 +318,8 @@ def load_data() -> dict:
     return COMM.bcast(data, root=0)
 
 
+# 按波段覆盖全局分量先验；每个分量必须有一对有限且递增的边界。
+# width_prior 是正的物理宽度区间；原生采样中的宽度坐标另行取自然对数。
 def component_prior_for_band(
     fit: dict,
     response: str | None,
@@ -336,6 +355,10 @@ def component_prior_for_band(
     return resolved
 
 
+# 有序 Gaussian 的兼容桥接：gmodel.setup(lag_prior=...) 会切换先验类型，
+# 因此在 TypeLagPrior=0 情况下用原生先验文件约束质心，同时保留有序参数化。
+# 这里只支持两个同范围 Gaussian；质心索引 5、8 位于连续光变三参数块及响应误差项之后。
+# 连续光变三参数实际是 sys_err_con、ln(sigmad)、ln(taud)，其中只有后两项是 DRW 过程参数。
 def ordered_gaussian_prior_text(
     fit: dict, data: dict, response: str | None = None
 ) -> str | None:
@@ -368,6 +391,8 @@ def ordered_gaussian_prior_text(
     )
 
 
+# 先验文件由 rank 0 写好后再同步；set_priors 必须在每个 rank 调用，
+# 因为它修改当前进程中的 C 全局状态，不能仅靠广播 Python 对象代替。
 def set_ordered_gaussian_priors(
     model, fit: dict, data: dict, response: str | None = None
 ) -> None:
@@ -387,6 +412,8 @@ def set_ordered_gaussian_priors(
     model.set_priors(str(path))
 
 
+# 把项目配置翻译成 pymica.setup 的参数；不在这里做拟合。
+# number_component 固定为 [n,n]，表示本次不比较不同分量数模型。
 def setup_kwargs(fit: dict, data: dict, response: str | None = None) -> dict:
     ncomp = fit["ncomp"]
     out = {
@@ -419,6 +446,8 @@ def have_decomp(ncomp: int) -> bool:
     )
 
 
+# 检查当前安装的 pymica 绘图接口是否支持所请求网格参数；缺少补丁时提前报错。
+# 这里只检查签名，不自动修改第三方库。
 def check_tf_plot_support(fit: dict) -> None:
     """Catch a missing Python-only grid patch before starting a long fit."""
     if fit.get("plot_tf_num_points") is None:
@@ -433,6 +462,7 @@ def check_tf_plot_support(fit: dict) -> None:
         )
 
 
+# 从保存的 param_input 读取实际生效的原生设置，减少绘图配置与历史运行不一致。
 def native_plot_arguments(fit: dict) -> tuple[dict, dict]:
     """Read saved model metadata when calling the Python utility directly.
 
@@ -464,6 +494,7 @@ def native_plot_arguments(fit: dict) -> tuple[dict, dict]:
     return common, settings
 
 
+# 只调用原生结果绘图；网格细化改变显示采样，不会增加后验信息。
 def plot_results(model, fit: dict) -> None:
     if fit.get("plot_tf_num_points") is None:
         model.plot_results(
@@ -483,6 +514,8 @@ def plot_results(model, fit: dict) -> None:
     )
 
 
+# 按核族和分量数选择原生分解绘图入口；单分量与混合核存在专门兼容路径。
+# 分解曲线是模型条件下的响应分量，comp0 的编号本身不证明它就是吸积盘。
 def plot_decomposition(model, fit: dict) -> None:
     """Plot exactly the fixed component count, including mmap ncomp>2.
 
@@ -511,6 +544,8 @@ def plot_decomposition(model, fit: dict) -> None:
         model.plot_decomp(doshow=False)
 
 
+# 拟合后的流水线：可选后处理，再重建总响应/各分量，最后绘图与后验权重整理。
+# 重建仍调用原生 MICA，可能耗时；阅读、注释或语法检查无需执行本函数。
 def finish(model, fit: dict, post_run: bool) -> None:
     if COMM is None:
         raise RuntimeError("finish() must run inside an MPI worker")
@@ -543,6 +578,7 @@ def finish(model, fit: dict, post_run: bool) -> None:
     COMM.Barrier()
 
 
+# 把仅 rank 0 执行的文件检查异常转成字符串并广播，避免其他 rank 永久等在 collective。
 def root_call(function, *args, **kwargs):
     """Broadcast root-side validation errors before peers enter native collectives."""
     if COMM is None:
@@ -559,6 +595,9 @@ def root_call(function, *args, **kwargs):
     return result
 
 
+# 单个 MPI 作业的状态机：加锁 → 只读规划/临时 setup 比对 → fresh/resume/post/plot。
+# 恢复前先检查输入、参数、原生扩展及 checkpoint，不直接覆盖旧结果；fresh 才归档重开。
+# fit_only 只做采样与完成性登记，跳过重建/绘图，并不表示计算便宜。
 def run_band(src: Path, cfg: dict, fit: dict, response: str, action: str) -> None:
     if COMM is None or pymica is None:
         raise RuntimeError("run_band() must run inside an MPI worker")
@@ -606,6 +645,7 @@ def run_band(src: Path, cfg: dict, fit: dict, response: str, action: str) -> Non
             kwargs, prior_text = run_mica_joint.setup(fit, data)
         else:
             kwargs = setup_kwargs(fit, data, response)
+        # 用于恢复的身份要包含联合响应顺序和明确先验文本，但数据数组通过输入哈希另行验证。
         settings = {key: value for key, value in kwargs.items() if key not in {"data", "data_file"}}
         if fit_only:
             settings["_fit_only"] = True
@@ -655,6 +695,7 @@ def run_band(src: Path, cfg: dict, fit: dict, response: str, action: str) -> Non
         else:
             # setup() serializes inputs and parameters. Validate its output in a
             # shared preview directory before allowing any write to the old run.
+            # setup 本身会写文件，先在共享临时目录运行，核对成功后才允许触及旧运行目录。
             preview = Path(root_call(
                 tempfile.mkdtemp, prefix=f".{rd.name}.preview-", dir=str(rd.parent)
             ))
@@ -693,6 +734,7 @@ def run_band(src: Path, cfg: dict, fit: dict, response: str, action: str) -> Non
             native_kwargs = {"mixed": fit["_mixed"], "phase": phase}
             if fit_only:
                 native_kwargs["fit_only"] = True
+            # 真正进入耗时原生采样的位置；阶段检查、锁和备份必须在此之前完成。
             result = run_native_resume(**native_kwargs)
             plan["continuum_prior"] = result["continuum_prior"]
             COMM.Barrier()
@@ -735,6 +777,9 @@ def batches(values: list[str], size: int):
         yield values[i : i + size]
 
 
+# 外层调度器按波段分批启动 mpiexec；每个作业内部再有 mpi_per_band 个 rank。
+# 将 BLAS/OMP 线程限制为 1，避免进程并行叠加线程并行导致过量占用。
+# 进程退出码 0 仍须配合 run_state 的 complete 与目标保存量检查，不能单独证明成功。
 def launch(
     src: Path,
     fit: dict,
@@ -786,6 +831,7 @@ def launch(
                         attempt += 1
                 log("start: " + " ".join(cmd) + f" -> {log_path}")
                 try:
+                    # 每个 launcher 建独立进程组，异常清理只终止本次启动的子进程。
                     process = subprocess.Popen(
                         cmd, cwd=str(ROOT), stdout=handle,
                         stderr=subprocess.STDOUT, env=env, start_new_session=True,
@@ -848,6 +894,7 @@ def launch(
                 handle.close()
 
 
+# 把命令行映射为 source、band、action、stage；plotdecomp 是旧名称兼容。
 def parse_args(words: list[str]) -> tuple[str, str | None, str, str | None]:
     source = words[0]
     rest = words[1:]
@@ -871,6 +918,8 @@ def parse_args(words: list[str]) -> tuple[str, str | None, str, str | None]:
     return source, band, action, stage
 
 
+# 统一 CLI：调度进程顺序遍历 stage，MPI worker 只接收一个 stage/波段。
+# --joint 走多响应原型且隐含 --fit-only；普通入口则是逐波段独立响应拟合。
 def main() -> None:
     if len(sys.argv) < 2:
         print(__doc__)

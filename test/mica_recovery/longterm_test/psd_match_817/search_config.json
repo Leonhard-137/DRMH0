@@ -1,0 +1,49 @@
+{
+  "parameter_names": [
+    "tauI",
+    "tauS",
+    "AW",
+    "AU",
+    "BW",
+    "BU"
+  ],
+  "parameter_bounds": [
+    [
+      0.1,
+      100.0
+    ],
+    [
+      5.0,
+      1000.0
+    ],
+    [
+      0.001,
+      1.5
+    ],
+    [
+      0.001,
+      1.5
+    ],
+    [
+      0.0001,
+      3.0
+    ],
+    [
+      0.0001,
+      3.0
+    ]
+  ],
+  "model": "fractional W2=AW*(DW*I)+BW*S+nW; fractional U=AU*((0.9*DU+0.1*BLR)*I)+BU*S+nU",
+  "latent_processes": "independent, unit stationary variance OU I and Matern32 S; same I and same S in both bands; S is added directly",
+  "fixed_kernel": "Historical Starkey disk; BLR gamma k=2 onset=6 d, theta=7 d; U disk:BLR areas=9:1",
+  "observed_inputs": "/home/leonhard/sci001/test/mica_smooth/data/original",
+  "metric": "mean squared difference of binned log PSD means, standardized by fixed reference-model log PSD standard deviations; not chi-square likelihood",
+  "search_realizations": 64,
+  "rerank_realizations": 256,
+  "validation_realizations": 500,
+  "search_seed": 8171003,
+  "validation_seed": 8171004,
+  "physical_selection": "Deferred to user. No fast-driver or slow-dominance penalty; bounds and boundary proximity reported.",
+  "selection_rule": "Independent joint max-band PSD discrepancy <= its simulated 95th percentile. Conditional compatibility screen, not a posterior or global post-selection p-value.",
+  "generated_at_unix": 1791030393.7455435
+}
